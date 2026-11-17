@@ -124,9 +124,10 @@ export default function App() {
 
   const pendingSeekRef = useRef<number | null>(null);
 
-  const loadTrack = useCallback((track: PlayableTrack, startAt?: number) => {
+  /** Carrega e toca a faixa. Resolve true se a reprodução começou de fato. */
+  const loadTrack = useCallback(async (track: PlayableTrack, startAt?: number): Promise<boolean> => {
     const engine = engineRef.current;
-    if (!engine || !track.url) return;
+    if (!engine || !track.url) return false;
     const s = settingsRef.current;
     engine.init();
     engine.applyPreset(s.eqGains);
@@ -138,9 +139,15 @@ export default function App() {
     pendingSeekRef.current = startAt && startAt > 0 ? startAt : null;
     audio.src = track.url;
     audio.volume = s.volume;
-    audio.play().catch(() => notifyRef.current(`“${track.name}” está pronta. Toque em play para ouvir em 3D.`));
     setCurrentId(track.id);
     engine.updateMediaSession(track.name, track.artist, track.albumArt, () => stepRef.current(1), () => stepRef.current(-1));
+    try {
+      await audio.play();
+      return true;
+    } catch {
+      notifyRef.current(`“${track.name}” está pronta. Toque em play para ouvir em 3D.`);
+      return false;
+    }
   }, []);
 
   const step = useCallback(
@@ -377,8 +384,15 @@ export default function App() {
       }
       state.handledId = now.id;
       const startAt = now.progressMs / 1000 + 0.6; // compensa o atraso da troca
-      setFollowMeta({ id: match.url, name: now.name, artist: now.artist, albumArt: now.albumArt });
-      loadTrack({ id: match.url, name: now.name, artist: now.artist, albumArt: now.albumArt, url: match.url, source: 'spotify-matched' }, startAt);
+      // Usa o ID da faixa já na fila (ex.: a mesma música na playlist selecionada) para o player achá-la.
+      const queueId = tracksRef.current.find((t) => t.url === match.url)?.id ?? match.url;
+      setFollowMeta({ id: queueId, name: now.name, artist: now.artist, albumArt: now.albumArt });
+      const started = await loadTrack(
+        { id: queueId, name: now.name, artist: now.artist, albumArt: now.albumArt, url: match.url, source: 'spotify-matched' },
+        startAt,
+      );
+      // Só pausa o Spotify se o 3D realmente começou a tocar; senão os dois ficariam mudos.
+      if (!started) return;
       const paused = await pauseSpotifyPlayback(token);
       if (!paused && !state.warnedPause) {
         state.warnedPause = true;
