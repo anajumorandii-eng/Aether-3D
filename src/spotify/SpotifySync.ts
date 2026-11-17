@@ -1,5 +1,5 @@
 // Cole aqui o Client ID copiado do Spotify Developer Dashboard
-export const SPOTIFY_CLIENT_ID = 'COLE_SEU_CLIENT_ID_AQUI';
+export const SPOTIFY_CLIENT_ID = 'f6d326f9c3764b1bb0cd57034abb89ff';
 
 const REDIRECT_URI = `${window.location.origin}/`;
 const SCOPES = 'user-library-read playlist-read-private playlist-read-collaborative';
