@@ -384,9 +384,11 @@ export default function App() {
       }
       state.handledId = now.id;
       const startAt = now.progressMs / 1000 + 0.6; // compensa o atraso da troca
-      setFollowMeta({ id: match.url, name: now.name, artist: now.artist, albumArt: now.albumArt });
+      // Usa o ID da faixa já na fila (ex.: a mesma música na playlist selecionada) para o player achá-la.
+      const queueId = tracksRef.current.find((t) => t.url === match.url)?.id ?? match.url;
+      setFollowMeta({ id: queueId, name: now.name, artist: now.artist, albumArt: now.albumArt });
       const started = await loadTrack(
-        { id: match.url, name: now.name, artist: now.artist, albumArt: now.albumArt, url: match.url, source: 'spotify-matched' },
+        { id: queueId, name: now.name, artist: now.artist, albumArt: now.albumArt, url: match.url, source: 'spotify-matched' },
         startAt,
       );
       // Só pausa o Spotify se o 3D realmente começou a tocar; senão os dois ficariam mudos.
