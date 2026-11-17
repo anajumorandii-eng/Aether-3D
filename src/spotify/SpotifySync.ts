@@ -2,7 +2,22 @@
 export const SPOTIFY_CLIENT_ID = 'f6d326f9c3764b1bb0cd57034abb89ff';
 
 const REDIRECT_URI = `${window.location.origin}/`;
-const SCOPES = 'user-library-read playlist-read-private playlist-read-collaborative';
+const SCOPES = [
+  'user-library-read',
+  'playlist-read-private',
+  'playlist-read-collaborative',
+  'user-read-currently-playing',
+  'user-read-playback-state',
+  'user-modify-playback-state',
+].join(' ');
+
+/** Permissões necessárias para o modo "Seguir o Spotify". */
+export const FOLLOW_SCOPES = ['user-read-currently-playing', 'user-modify-playback-state'];
+
+export function hasScopes(required: string[]): boolean {
+  const granted = (localStorage.getItem('spotify_scope') ?? '').split(' ');
+  return required.every((s) => granted.includes(s));
+}
 
 export interface SpotifyTrackItem {
   id: string;
@@ -82,6 +97,7 @@ export async function handleSpotifyCallback(): Promise<string | null> {
   const data = await response.json();
   if (data.access_token) {
     localStorage.setItem('spotify_access_token', data.access_token);
+    localStorage.setItem('spotify_scope', data.scope ?? '');
     localStorage.removeItem('spotify_code_verifier');
     window.history.replaceState({}, document.title, '/');
     return data.access_token;
@@ -91,10 +107,12 @@ export async function handleSpotifyCallback(): Promise<string | null> {
 
 export function logoutSpotify() {
   localStorage.removeItem('spotify_access_token');
+  localStorage.removeItem('spotify_scope');
 }
 
-async function spotifyFetch(endpoint: string, token: string) {
+async function spotifyFetch(endpoint: string, token: string, method = 'GET') {
   const res = await fetch(`https://api.spotify.com/v1${endpoint}`, {
+    method,
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) {
@@ -102,7 +120,44 @@ async function spotifyFetch(endpoint: string, token: string) {
     throw new Error('Sessão do Spotify expirada. Conecte novamente.');
   }
   if (!res.ok) throw new Error(`Spotify respondeu ${res.status}`);
-  return res.json();
+  if (res.status === 204) return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+export interface SpotifyNowPlaying extends SpotifyTrackItem {
+  progressMs: number;
+  durationMs: number;
+  isPlaying: boolean;
+}
+
+/** O que está tocando agora na conta (em qualquer aparelho). null se nada estiver tocando. */
+export async function fetchCurrentlyPlaying(token: string): Promise<SpotifyNowPlaying | null> {
+  const data = await spotifyFetch('/me/player/currently-playing', token);
+  const item = data?.item;
+  if (!item || data.currently_playing_type !== 'track') return null;
+  return {
+    id: String(item.id),
+    name: String(item.name),
+    artist: Array.isArray(item.artists)
+      ? item.artists.map((a: { name: string }) => a.name).join(', ')
+      : 'Artista desconhecido',
+    albumArt: item.album?.images?.[0]?.url,
+    previewUrl: item.preview_url ?? null,
+    progressMs: Number(data.progress_ms ?? 0),
+    durationMs: Number(item.duration_ms ?? 0),
+    isPlaying: Boolean(data.is_playing),
+  };
+}
+
+/** Pausa o Spotify (requer Premium). Retorna false se não foi possível. */
+export async function pauseSpotifyPlayback(token: string): Promise<boolean> {
+  try {
+    await spotifyFetch('/me/player/pause', token, 'PUT');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchUserPlaylists(token: string): Promise<SpotifyPlaylist[]> {

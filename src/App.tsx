@@ -4,13 +4,18 @@ import { FolderOpen, Library as LibraryIcon, Orbit, Sliders, Sparkles, X } from 
 import { EQ_PRESETS, SpatialAudioEngine, type RoomType } from './audio/AudioEngine';
 import { createDemoTrackUrl } from './audio/demoTrack';
 import {
+  FOLLOW_SCOPES,
+  fetchCurrentlyPlaying,
   fetchPlaylistTracks,
   fetchUserPlaylists,
+  hasScopes,
+  pauseSpotifyPlayback,
   handleSpotifyCallback,
   isSpotifyConfigured,
   loginWithSpotify,
   logoutSpotify,
   normalizeText,
+  type SpotifyNowPlaying,
   type SpotifyPlaylist,
   type SpotifyTrackItem,
 } from './spotify/SpotifySync';
@@ -29,6 +34,17 @@ interface LocalFile {
 
 type MobileTab = 'library' | 'eq' | 'room';
 
+function findLocalMatch(files: LocalFile[], name: string, artist: string) {
+  const cleanTrack = normalizeText(name);
+  const cleanFull = normalizeText(`${artist} ${name}`);
+  if (!cleanTrack) return undefined;
+  return files.find((f) => f.key.includes(cleanTrack) || cleanFull.includes(f.key));
+}
+
+// WAV silencioso: "destrava" o player no iOS durante um toque, para tocar depois sem gesto.
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+
 export default function App() {
   const engineRef = useRef<SpatialAudioEngine | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -41,6 +57,8 @@ export default function App() {
   const [selectedPlaylist, setSelectedPlaylist] = useState('');
   const [spotifyTracks, setSpotifyTracks] = useState<SpotifyTrackItem[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [followSpotify, setFollowSpotify] = useState(false);
+  const [spotifyNow, setSpotifyNow] = useState<SpotifyNowPlaying | null>(null);
 
   // Reprodução
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -68,9 +86,7 @@ export default function App() {
   const tracks = useMemo<PlayableTrack[]>(() => {
     const used = new Set<string>();
     const merged: PlayableTrack[] = spotifyTracks.map((sp) => {
-      const cleanTrack = normalizeText(sp.name);
-      const cleanFull = normalizeText(`${sp.artist} ${sp.name}`);
-      const match = localFiles.find((f) => f.key.includes(cleanTrack) || cleanFull.includes(f.key));
+      const match = findLocalMatch(localFiles, sp.name, sp.artist);
       if (match) used.add(match.url);
       const url = match?.url || sp.previewUrl || undefined;
       return { ...sp, url, source: url ? 'spotify-matched' : 'spotify-unmatched' };
@@ -90,18 +106,25 @@ export default function App() {
   currentIdRef.current = currentId;
 
   const currentIndex = tracks.findIndex((t) => t.id === currentId);
-  const currentTrack = currentIndex >= 0 ? tracks[currentIndex] : undefined;
+  const [followMeta, setFollowMeta] = useState<Pick<PlayableTrack, 'id' | 'name' | 'artist' | 'albumArt'> | null>(null);
+  const baseTrack = currentIndex >= 0 ? tracks[currentIndex] : undefined;
+  // Ao seguir o Spotify, mostra os dados da faixa do Spotify sobre o arquivo local vinculado.
+  const currentTrack = baseTrack && followMeta?.id === baseTrack.id ? { ...baseTrack, ...followMeta } : baseTrack;
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 4200);
   }, []);
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
 
   // ---------- Reprodução ----------
   const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume });
   settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume };
 
-  const loadTrack = useCallback((track: PlayableTrack) => {
+  const pendingSeekRef = useRef<number | null>(null);
+
+  const loadTrack = useCallback((track: PlayableTrack, startAt?: number) => {
     const engine = engineRef.current;
     if (!engine || !track.url) return;
     const s = settingsRef.current;
@@ -112,9 +135,10 @@ export default function App() {
     engine.setPosition(s.pos.x * 3, s.elevation * 2, s.pos.z * 3);
 
     const audio = engine.getAudioElement();
+    pendingSeekRef.current = startAt && startAt > 0 ? startAt : null;
     audio.src = track.url;
     audio.volume = s.volume;
-    audio.play().catch(() => undefined);
+    audio.play().catch(() => notifyRef.current(`“${track.name}” está pronta. Toque em play para ouvir em 3D.`));
     setCurrentId(track.id);
     engine.updateMediaSession(track.name, track.artist, track.albumArt, () => stepRef.current(1), () => stepRef.current(-1));
   }, []);
@@ -143,7 +167,12 @@ export default function App() {
     const audio = engine.getAudioElement();
 
     const onTime = () => setCurrentTime(audio.currentTime);
-    const onMeta = () => setDuration(audio.duration || 0);
+    const onMeta = () => {
+      setDuration(audio.duration || 0);
+      const seek = pendingSeekRef.current;
+      pendingSeekRef.current = null;
+      if (seek !== null && seek < (audio.duration || Infinity)) audio.currentTime = seek;
+    };
     const onEnded = () => stepRef.current(1);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
@@ -295,11 +324,92 @@ export default function App() {
 
   const disconnectSpotify = () => {
     logoutSpotify();
+    setFollowSpotify(false);
+    setSpotifyNow(null);
     setSpotifyToken(null);
     setPlaylists([]);
     setSpotifyTracks([]);
     setSelectedPlaylist('');
   };
+
+  // ---------- Seguir o Spotify ----------
+  const localFilesRef = useRef(localFiles);
+  localFilesRef.current = localFiles;
+  const followStateRef = useRef<{ handledId: string | null; notifiedId: string | null; warnedPause: boolean }>({ handledId: null, notifiedId: null, warnedPause: false });
+
+  const toggleFollow = (on: boolean) => {
+    if (on && !hasScopes(FOLLOW_SCOPES)) {
+      notify('Autorize o Aether 3D a ver o que você está ouvindo. Abrindo o Spotify…');
+      window.setTimeout(loginWithSpotify, 900);
+      return;
+    }
+    if (on) {
+      // Destrava o áudio no iOS enquanto há um toque do usuário.
+      const engine = engineRef.current;
+      if (engine) {
+        engine.init();
+        const audio = engine.getAudioElement();
+        if (!audio.src) {
+          audio.src = SILENT_WAV;
+          audio.play().then(() => audio.pause()).catch(() => undefined);
+        }
+      }
+      followStateRef.current = { handledId: null, notifiedId: null, warnedPause: false };
+    } else {
+      setSpotifyNow(null);
+    }
+    setFollowSpotify(on);
+  };
+
+  const handleSpotifyNow = useCallback(
+    async (now: SpotifyNowPlaying | null, token: string) => {
+      setSpotifyNow(now);
+      const state = followStateRef.current;
+      if (!now || !now.isPlaying || now.id === state.handledId) return;
+
+      const match = findLocalMatch(localFilesRef.current, now.name, now.artist);
+      if (!match) {
+        if (state.notifiedId !== now.id) {
+          state.notifiedId = now.id;
+          notifyRef.current(`No Spotify: “${now.name}”. Importe o arquivo para ouvir em 3D.`);
+        }
+        return;
+      }
+      state.handledId = now.id;
+      const startAt = now.progressMs / 1000 + 0.6; // compensa o atraso da troca
+      setFollowMeta({ id: match.url, name: now.name, artist: now.artist, albumArt: now.albumArt });
+      loadTrack({ id: match.url, name: now.name, artist: now.artist, albumArt: now.albumArt, url: match.url, source: 'spotify-matched' }, startAt);
+      const paused = await pauseSpotifyPlayback(token);
+      if (!paused && !state.warnedPause) {
+        state.warnedPause = true;
+        notifyRef.current('Não consegui pausar o Spotify (requer Premium). Pause-o para ouvir só em 3D.');
+      }
+    },
+    [loadTrack],
+  );
+
+  useEffect(() => {
+    if (!followSpotify || !spotifyToken) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const now = await fetchCurrentlyPlaying(spotifyToken);
+        if (!cancelled) await handleSpotifyNow(now, spotifyToken);
+      } catch (err) {
+        if (cancelled) return;
+        notifyRef.current(err instanceof Error ? err.message : 'Falha ao ler o Spotify.');
+        setFollowSpotify(false);
+      }
+    };
+    poll();
+    const id = window.setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [followSpotify, spotifyToken, handleSpotifyNow]);
+
+  const spotifyNowMatched = spotifyNow ? Boolean(findLocalMatch(localFiles, spotifyNow.name, spotifyNow.artist)) : false;
 
   const handleFiles = (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -340,6 +450,10 @@ export default function App() {
       isPlaying={isPlaying}
       onConnect={connectSpotify}
       onSync={() => spotifyToken && syncPlaylists(spotifyToken)}
+      following={followSpotify}
+      onFollow={toggleFollow}
+      spotifyNow={spotifyNow}
+      spotifyNowMatched={spotifyNowMatched}
       onLogout={disconnectSpotify}
       onImport={() => fileInputRef.current?.click()}
       onDemo={playDemo}
