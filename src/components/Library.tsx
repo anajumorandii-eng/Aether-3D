@@ -1,6 +1,6 @@
-import { AudioLines, FolderOpen, ListMusic, LogOut, Music2, RefreshCw, Sparkles } from 'lucide-react';
-import type { SpotifyPlaylist } from '../spotify/SpotifySync';
-import { PanelHeader } from './ui';
+import { AudioLines, FolderOpen, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles } from 'lucide-react';
+import type { SpotifyNowPlaying, SpotifyPlaylist } from '../spotify/SpotifySync';
+import { PanelHeader, Toggle } from './ui';
 
 export interface PlayableTrack {
   id: string;
@@ -29,6 +29,10 @@ interface Props {
   isPlaying: boolean;
   onConnect: () => void;
   onSync: () => void;
+  following: boolean;
+  onFollow: (on: boolean) => void;
+  spotifyNow: SpotifyNowPlaying | null;
+  spotifyNowMatched: boolean;
   onLogout: () => void;
   onImport: () => void;
   onDemo: () => void;
@@ -79,6 +83,53 @@ export function Library(p: Props) {
             <Sparkles className="w-4 h-4 text-accent" /> Demonstração
           </button>
         </div>
+
+        {p.connected && (
+          <div className="mt-4 rounded-xl border border-line bg-sunken/70 p-3">
+            <div className="flex items-center gap-3">
+              <span className="grid place-items-center w-8 h-8 rounded-lg bg-spotify/10 text-spotify shrink-0">
+                <Radio className="w-4 h-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-ink">Seguir o Spotify</p>
+                <p className="text-[11px] text-ink-muted leading-snug">Toca em 3D o que você ouvir no Spotify</p>
+              </div>
+              <Toggle checked={p.following} onChange={p.onFollow} label="Seguir o Spotify" />
+            </div>
+
+            {p.following && (
+              <div className="mt-3 pt-3 border-t border-line flex items-center gap-3 animate-fade-up">
+                {p.spotifyNow ? (
+                  <>
+                    {p.spotifyNow.albumArt ? (
+                      <img src={p.spotifyNow.albumArt} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-lg bg-raised grid place-items-center shrink-0">
+                        <Music2 className="w-4 h-4 text-ink-muted" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-ink">{p.spotifyNow.name}</p>
+                      <p className="truncate text-[11px] text-ink-muted">{p.spotifyNow.artist}</p>
+                    </div>
+                    <span
+                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md shrink-0 ${
+                        p.spotifyNowMatched ? 'text-ok bg-ok/10' : 'text-ink-faint bg-raised'
+                      }`}
+                    >
+                      {p.spotifyNowMatched ? 'Em 3D' : 'Sem arquivo'}
+                    </span>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-ink-muted flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-spotify animate-pulse" />
+                    Aguardando uma música tocar no Spotify…
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {p.connected && p.playlists.length > 0 && (
           <div className="mt-4">
