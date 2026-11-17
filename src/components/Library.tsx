@@ -1,4 +1,4 @@
-import { AudioLines, FolderOpen, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles } from 'lucide-react';
+import { AudioLines, FolderOpen, HardDrive, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import type { SpotifyNowPlaying, SpotifyPlaylist } from '../spotify/SpotifySync';
 import { PanelHeader, Toggle } from './ui';
 
@@ -38,6 +38,7 @@ interface Props {
   onDemo: () => void;
   onSelectPlaylist: (id: string) => void;
   onPlayTrack: (index: number) => void;
+  onRemoveTrack: (url: string) => void;
 }
 
 export function Library(p: Props) {
@@ -185,12 +186,17 @@ export function Library(p: Props) {
                 Toque em <b className="text-ink">Arquivos</b> para vincular os MP3/FLAC às faixas sem áudio.
               </p>
             )}
+            {p.tracks.some((t) => t.source === 'local' || t.source === 'spotify-matched') && (
+              <p className="flex items-center gap-1.5 text-[11px] text-ink-faint mb-2">
+                <HardDrive className="w-3 h-3" /> Músicas importadas ficam salvas neste aparelho
+              </p>
+            )}
             <ol className="space-y-1 overflow-y-auto thin-scrollbar -mx-2 px-2 max-h-[340px] lg:max-h-[480px] min-h-0">
               {p.tracks.map((track, idx) => {
                 const playable = Boolean(track.url);
                 const current = idx === p.currentIndex && playable;
                 return (
-                  <li key={track.id}>
+                  <li key={track.id} className="group/row relative">
                     <button
                       onClick={() => playable && p.onPlayTrack(idx)}
                       disabled={!playable}
@@ -218,7 +224,17 @@ export function Library(p: Props) {
                         <p className="truncate text-[11px] text-ink-muted">{track.artist}</p>
                       </div>
                       <SourceBadge track={track} />
+                      {track.source === 'local' && <span className="w-7 shrink-0" aria-hidden="true" />}
                     </button>
+                    {track.source === 'local' && track.url && (
+                      <button
+                        onClick={() => p.onRemoveTrack(track.url!)}
+                        aria-label={`Remover ${track.name} da biblioteca`}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-ink-faint hover:text-red-300 hover:bg-raised transition lg:opacity-0 lg:group-hover/row:opacity-100 focus-visible:opacity-100"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </li>
                 );
               })}

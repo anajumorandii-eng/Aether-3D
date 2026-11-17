@@ -3,6 +3,7 @@ import type { ChangeEvent } from 'react';
 import { FolderOpen, Library as LibraryIcon, Orbit, Sliders, Sparkles, X } from 'lucide-react';
 import { EQ_PRESETS, SpatialAudioEngine, type RoomType } from './audio/AudioEngine';
 import { createDemoTrackUrl } from './audio/demoTrack';
+import { deleteStoredFile, loadStoredFiles, requestPersistentStorage, saveStoredFiles, type StoredFile } from './storage/library';
 import {
   FOLLOW_SCOPES,
   fetchCurrentlyPlaying,
@@ -27,6 +28,8 @@ import { PlayerBar } from './components/PlayerBar';
 import { Field, Logo, PanelHeader, Range, Stat, Toggle } from './components/ui';
 
 interface LocalFile {
+  id: string;
+  size: number;
   key: string;
   name: string;
   url: string;
@@ -425,20 +428,77 @@ export default function App() {
 
   const spotifyNowMatched = spotifyNow ? Boolean(findLocalMatch(localFiles, spotifyNow.name, spotifyNow.artist)) : false;
 
-  const handleFiles = (e: ChangeEvent<HTMLInputElement>) => {
+  // Restaura a biblioteca salva no aparelho ao abrir o app.
+  useEffect(() => {
+    let cancelled = false;
+    loadStoredFiles().then((stored) => {
+      if (cancelled || stored.length === 0) return;
+      const restored = stored.map((f) => {
+        const name = f.name;
+        return { id: f.id, size: f.size, key: normalizeText(name), name, url: URL.createObjectURL(f.blob) };
+      });
+      setLocalFiles((prev) => [...restored, ...prev.filter((p) => !restored.some((r) => r.id === p.id))]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleFiles = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const added: LocalFile[] = Array.from(files).map((file) => {
+    const existing = localFilesRef.current;
+    const stored: StoredFile[] = [];
+    const added: LocalFile[] = [];
+    let skipped = 0;
+    for (const file of Array.from(files)) {
       const name = file.name.replace(/\.[^/.]+$/, '');
-      return { key: normalizeText(name), name, url: URL.createObjectURL(file) };
-    });
-    setLocalFiles((prev) => [...prev, ...added]);
+      // Ignora arquivos repetidos (mesmo nome e tamanho)
+      if ([...existing, ...added].some((f) => f.name === name && f.size === file.size)) {
+        skipped++;
+        continue;
+      }
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      stored.push({ id, name, size: file.size, blob: file, addedAt: Date.now() + added.length });
+      added.push({ id, size: file.size, key: normalizeText(name), name, url: URL.createObjectURL(file) });
+    }
     e.target.value = '';
-    notify(`${added.length} ${added.length === 1 ? 'arquivo importado' : 'arquivos importados'}.`);
+    if (added.length === 0) {
+      notify(skipped === 1 ? 'Esse arquivo já está na sua biblioteca.' : 'Esses arquivos já estão na sua biblioteca.');
+      return;
+    }
+    setLocalFiles((prev) => [...prev, ...added]);
+
+    let saved = true;
+    try {
+      await requestPersistentStorage();
+      await saveStoredFiles(stored);
+    } catch {
+      saved = false;
+    }
+    const n = added.length;
+    notify(
+      saved
+        ? `${n} ${n === 1 ? 'música salva' : 'músicas salvas'} no aparelho. Não precisa importar de novo.`
+        : `${n} ${n === 1 ? 'arquivo importado' : 'arquivos importados'}, mas sem espaço para salvar no aparelho.`,
+    );
     if (!currentId) {
       const first = added[0];
       loadTrack({ id: first.url, name: first.name, artist: 'Arquivo local', url: first.url, source: 'local' });
     }
+  };
+
+  const removeLocal = async (url: string) => {
+    const file = localFilesRef.current.find((f) => f.url === url);
+    if (!file) return;
+    if (currentIdRef.current && engineRef.current?.getAudioElement().src === url) {
+      engineRef.current.getAudioElement().pause();
+      setCurrentId(null);
+    }
+    setLocalFiles((prev) => prev.filter((f) => f.id !== file.id));
+    URL.revokeObjectURL(url);
+    await deleteStoredFile(file.id).catch(() => undefined);
+    notify(`“${file.name}” removida da biblioteca.`);
   };
 
   const playDemo = async () => {
@@ -473,6 +533,7 @@ export default function App() {
       onDemo={playDemo}
       onSelectPlaylist={(id) => spotifyToken && selectPlaylist(id, spotifyToken)}
       onPlayTrack={(i) => loadTrack(tracks[i])}
+      onRemoveTrack={removeLocal}
     />
   );
 
