@@ -7,6 +7,9 @@ export interface StoredFile {
   size: number;
   blob: Blob;
   addedAt: number;
+  /** Caminho no Azure Blob Storage, quando a música veio da nuvem. */
+  cloudName?: string;
+  cloudEtag?: string;
 }
 
 const DB_NAME = 'aether-3d';

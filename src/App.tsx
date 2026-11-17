@@ -3,6 +3,8 @@ import type { ChangeEvent } from 'react';
 import { FolderOpen, Library as LibraryIcon, Orbit, Sliders, Sparkles, X } from 'lucide-react';
 import { EQ_PRESETS, SpatialAudioEngine, type RoomType } from './audio/AudioEngine';
 import { createDemoTrackUrl } from './audio/demoTrack';
+import { clearCloudUrl, displayName, downloadCloudBlob, getCloudUrl, listCloudAudio, parseSasUrl, setCloudUrl } from './cloud/BlobSync';
+import { CloudPanel, type CloudStatus } from './components/CloudPanel';
 import { deleteStoredFile, loadStoredFiles, requestPersistentStorage, saveStoredFiles, type StoredFile } from './storage/library';
 import {
   FOLLOW_SCOPES,
@@ -29,6 +31,7 @@ import { Field, Logo, PanelHeader, Range, Stat, Toggle } from './components/ui';
 
 interface LocalFile {
   id: string;
+  cloudName?: string;
   size: number;
   key: string;
   name: string;
@@ -432,12 +435,18 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     loadStoredFiles().then((stored) => {
-      if (cancelled || stored.length === 0) return;
+      if (cancelled) return;
+      if (stored.length === 0) {
+        restoredRef.current = true;
+        return;
+      }
       const restored = stored.map((f) => {
         const name = f.name;
-        return { id: f.id, size: f.size, key: normalizeText(name), name, url: URL.createObjectURL(f.blob) };
+        return { id: f.id, cloudName: f.cloudName, size: f.size, key: normalizeText(name), name, url: URL.createObjectURL(f.blob) };
       });
       setLocalFiles((prev) => [...restored, ...prev.filter((p) => !restored.some((r) => r.id === p.id))]);
+      localFilesRef.current = [...restored, ...localFilesRef.current.filter((p) => !restored.some((r) => r.id === p.id))];
+      restoredRef.current = true;
     });
     return () => {
       cancelled = true;
@@ -498,7 +507,124 @@ export default function App() {
     setLocalFiles((prev) => prev.filter((f) => f.id !== file.id));
     URL.revokeObjectURL(url);
     await deleteStoredFile(file.id).catch(() => undefined);
-    notify(`“${file.name}” removida da biblioteca.`);
+    notify(
+      file.cloudName
+        ? `“${file.name}” removida do aparelho. Ela volta na próxima sincronização se continuar na nuvem.`
+        : `“${file.name}” removida da biblioteca.`,
+    );
+  };
+
+  // ---------- Nuvem (Azure Blob Storage) ----------
+  const [cloudUrl, setCloudUrlState] = useState<string | null>(() => getCloudUrl());
+  const [cloudStatus, setCloudStatus] = useState<CloudStatus>({ phase: 'idle', cloudCount: 0, total: 0, done: 0 });
+  const syncingRef = useRef(false);
+  const lastSyncRef = useRef(0);
+  const restoredRef = useRef(false);
+  const wantedRef = useRef<string[]>([]);
+  wantedRef.current = [
+    ...(spotifyNow ? [normalizeText(spotifyNow.name)] : []),
+    ...spotifyTracks.map((t) => normalizeText(t.name)),
+  ].filter(Boolean);
+
+  const syncCloud = useCallback(async (url: string) => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    setCloudStatus((s) => ({ ...s, phase: 'checking', error: undefined }));
+    try {
+      const blobs = await listCloudAudio(url);
+      const local = localFilesRef.current;
+      const missing = blobs.filter(
+        (b) => !local.some((f) => f.cloudName === b.name || (f.name === displayName(b.name) && f.size === b.size)),
+      );
+      // Primeiro as músicas da playlist / da faixa que está tocando no Spotify
+      const wanted = wantedRef.current;
+      const score = (name: string) => {
+        const key = normalizeText(displayName(name));
+        const i = wanted.findIndex((w) => key.includes(w));
+        return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+      };
+      missing.sort((a, b) => score(a.name) - score(b.name));
+
+      let failed = 0;
+      for (let i = 0; i < missing.length; i++) {
+        const b = missing[i];
+        const name = displayName(b.name);
+        setCloudStatus((s) => ({ ...s, phase: 'downloading', total: missing.length, done: i, current: name }));
+        try {
+          const blob = await downloadCloudBlob(url, b.name);
+          const id = `cloud-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          await saveStoredFiles([{ id, name, size: blob.size, blob, addedAt: Date.now(), cloudName: b.name, cloudEtag: b.etag }]);
+          const file: LocalFile = { id, cloudName: b.name, size: blob.size, key: normalizeText(name), name, url: URL.createObjectURL(blob) };
+          setLocalFiles((prev) => [...prev, file]);
+          localFilesRef.current = [...localFilesRef.current, file];
+        } catch {
+          failed++;
+        }
+      }
+
+      // Remove do aparelho o que foi apagado da nuvem
+      const names = new Set(blobs.map((b) => b.name));
+      const removed = localFilesRef.current.filter((f) => f.cloudName && !names.has(f.cloudName));
+      if (removed.length) {
+        for (const f of removed) {
+          URL.revokeObjectURL(f.url);
+          await deleteStoredFile(f.id).catch(() => undefined);
+        }
+        setLocalFiles((prev) => prev.filter((f) => !removed.some((r) => r.id === f.id)));
+      }
+
+      lastSyncRef.current = Date.now();
+      setCloudStatus({ phase: 'done', cloudCount: blobs.length, total: 0, done: 0, lastSync: Date.now(), failed });
+      const got = missing.length - failed;
+      if (got > 0) notifyRef.current(`${got} ${got === 1 ? 'música nova baixada' : 'músicas novas baixadas'} da nuvem.`);
+    } catch (err) {
+      setCloudStatus((s) => ({ ...s, phase: 'error', error: err instanceof Error ? err.message : 'Falha ao sincronizar.' }));
+    } finally {
+      syncingRef.current = false;
+    }
+  }, []);
+
+  // Sincroniza ao abrir o app e sempre que ele volta para a tela (no máximo a cada 2 min)
+  useEffect(() => {
+    if (!cloudUrl) return;
+    const maybeSync = () => {
+      if (!restoredRef.current || document.visibilityState !== 'visible') return;
+      if (Date.now() - lastSyncRef.current < 120_000) return;
+      syncCloud(cloudUrl);
+    };
+    const t = window.setInterval(maybeSync, 1000 * 60 * 10);
+    const start = window.setTimeout(maybeSync, 800);
+    document.addEventListener('visibilitychange', maybeSync);
+    return () => {
+      window.clearInterval(t);
+      window.clearTimeout(start);
+      document.removeEventListener('visibilitychange', maybeSync);
+    };
+  }, [cloudUrl, syncCloud]);
+
+  const connectCloud = async (raw: string): Promise<boolean> => {
+    try {
+      parseSasUrl(raw);
+      setCloudStatus((s) => ({ ...s, phase: 'checking', error: undefined }));
+      await listCloudAudio(raw);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Não foi possível conectar.');
+      setCloudStatus((s) => ({ ...s, phase: 'idle' }));
+      return false;
+    }
+    setCloudUrl(raw);
+    setCloudUrlState(raw.trim());
+    await requestPersistentStorage();
+    lastSyncRef.current = 0;
+    syncCloud(raw.trim());
+    return true;
+  };
+
+  const disconnectCloud = () => {
+    clearCloudUrl();
+    setCloudUrlState(null);
+    setCloudStatus({ phase: 'idle', cloudCount: 0, total: 0, done: 0 });
+    notify('Nuvem desconectada. As músicas já baixadas continuam no aparelho.');
   };
 
   const playDemo = async () => {
@@ -534,6 +660,15 @@ export default function App() {
       onSelectPlaylist={(id) => spotifyToken && selectPlaylist(id, spotifyToken)}
       onPlayTrack={(i) => loadTrack(tracks[i])}
       onRemoveTrack={removeLocal}
+      cloud={
+        <CloudPanel
+          configured={Boolean(cloudUrl)}
+          status={cloudStatus}
+          onConnect={connectCloud}
+          onSync={() => cloudUrl && syncCloud(cloudUrl)}
+          onDisconnect={disconnectCloud}
+        />
+      }
     />
   );
 
