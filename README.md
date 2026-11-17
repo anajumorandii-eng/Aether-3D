@@ -24,3 +24,14 @@ Para o Spotify, defina `SPOTIFY_CLIENT_ID` em `src/spotify/SpotifySync.ts` e cad
 npm run build
 swa deploy ./dist --env production
 ```
+
+## Sincronizar músicas pela nuvem (Azure Blob Storage)
+
+1. No portal do Azure, crie uma **Conta de armazenamento** e, dentro dela, um **contêiner** (ex.: `musicas`, nível de acesso **Privado**).
+2. Envie seus MP3/FLAC para o contêiner (botão **Carregar**). Subpastas são aceitas.
+3. Em **Configurações → Compartilhamento de recursos (CORS) → Serviço Blob**, adicione uma regra:
+   origem `https://ambitious-sky-061d4a210.5.azurestaticapps.net`, métodos `GET, HEAD, OPTIONS`, cabeçalhos `*`.
+4. No contêiner, abra **Tokens de acesso compartilhado**, marque **Ler** e **Listar**, escolha uma validade longa e gere a **URL SAS do Blob**.
+5. No app, em **Biblioteca → Nuvem · Azure → Conectar armazenamento**, cole a URL SAS.
+
+O app baixa as músicas novas ao abrir e ao voltar para a tela, e remove do aparelho as que forem apagadas da nuvem.

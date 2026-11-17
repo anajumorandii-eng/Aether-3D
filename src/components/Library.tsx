@@ -1,4 +1,5 @@
 import { AudioLines, FolderOpen, HardDrive, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { SpotifyNowPlaying, SpotifyPlaylist } from '../spotify/SpotifySync';
 import { PanelHeader, Toggle } from './ui';
 
@@ -39,6 +40,7 @@ interface Props {
   onSelectPlaylist: (id: string) => void;
   onPlayTrack: (index: number) => void;
   onRemoveTrack: (url: string) => void;
+  cloud?: ReactNode;
 }
 
 export function Library(p: Props) {
@@ -155,6 +157,8 @@ export function Library(p: Props) {
           </div>
         )}
       </section>
+
+      {p.cloud}
 
       <section className="panel p-5 flex flex-col min-h-0 flex-1">
         <PanelHeader
