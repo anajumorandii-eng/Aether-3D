@@ -14,6 +14,7 @@ import {
   hasScopes,
   pauseSpotifyPlayback,
   handleSpotifyCallback,
+  isSpotifySessionSaved,
   isSpotifyConfigured,
   loginWithSpotify,
   logoutSpotify,
@@ -63,7 +64,18 @@ export default function App() {
   const [selectedPlaylist, setSelectedPlaylist] = useState('');
   const [spotifyTracks, setSpotifyTracks] = useState<SpotifyTrackItem[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [followSpotify, setFollowSpotify] = useState(false);
+  // Lembra o modo "Seguir o Spotify" entre aberturas do app
+  const [followSpotify, setFollowSpotifyState] = useState(
+    () => localStorage.getItem('aether_follow_spotify') === '1' && isSpotifySessionSaved() && hasScopes(FOLLOW_SCOPES),
+  );
+  const setFollowSpotify = useCallback((on: boolean) => {
+    try {
+      localStorage.setItem('aether_follow_spotify', on ? '1' : '0');
+    } catch {
+      /* armazenamento indisponível */
+    }
+    setFollowSpotifyState(on);
+  }, []);
   const [spotifyNow, setSpotifyNow] = useState<SpotifyNowPlaying | null>(null);
 
   // Reprodução
@@ -300,16 +312,27 @@ export default function App() {
     }
   }, [notify]);
 
+  const selectedPlaylistRef = useRef(selectedPlaylist);
+  selectedPlaylistRef.current = selectedPlaylist;
+  const lastPlaylistSyncRef = useRef(0);
+
   const syncPlaylists = useCallback(
-    async (token: string) => {
+    async (token: string, quiet = false) => {
       setIsSyncing(true);
       try {
         const list = await fetchUserPlaylists(token);
         setPlaylists(list);
-        if (list.length > 0) await selectPlaylist(list[0].id, token);
+        lastPlaylistSyncRef.current = Date.now();
+        // Mantém a playlist escolhida, se ela ainda existir
+        const keep = list.find((pl) => pl.id === selectedPlaylistRef.current) ?? list[0];
+        if (keep) await selectPlaylist(keep.id, token);
       } catch (err) {
-        notify(err instanceof Error ? err.message : 'Falha ao sincronizar o Spotify.');
-        setSpotifyToken(null);
+        if (!isSpotifySessionSaved()) {
+          notify(err instanceof Error ? err.message : 'Falha ao sincronizar o Spotify.');
+          setSpotifyToken(null);
+        } else if (!quiet) {
+          notify('Não consegui atualizar o Spotify agora. Tento de novo em instantes.');
+        }
       } finally {
         setIsSyncing(false);
       }
@@ -317,12 +340,31 @@ export default function App() {
     [notify, selectPlaylist],
   );
 
+  // Atualiza playlists sozinho: ao voltar para o app e a cada 15 min (no máximo a cada 10 min)
+  useEffect(() => {
+    if (!spotifyToken) return;
+    const maybeSync = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastPlaylistSyncRef.current < 10 * 60_000) return;
+      syncPlaylists(spotifyToken, true);
+    };
+    const t = window.setInterval(maybeSync, 15 * 60_000);
+    document.addEventListener('visibilitychange', maybeSync);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener('visibilitychange', maybeSync);
+    };
+  }, [spotifyToken, syncPlaylists]);
+
   useEffect(() => {
     (async () => {
       const token = await handleSpotifyCallback().catch(() => null);
       if (token) {
         setSpotifyToken(token);
         syncPlaylists(token);
+        if (localStorage.getItem('aether_follow_spotify') === '1' && hasScopes(FOLLOW_SCOPES)) {
+          setFollowSpotifyState(true);
+        }
       }
     })();
   }, [syncPlaylists]);
@@ -353,6 +395,7 @@ export default function App() {
   const toggleFollow = (on: boolean) => {
     if (on && !hasScopes(FOLLOW_SCOPES)) {
       notify('Autorize o Aether 3D a ver o que você está ouvindo. Abrindo o Spotify…');
+      localStorage.setItem('aether_follow_spotify', '1'); // liga sozinho ao voltar do login
       window.setTimeout(loginWithSpotify, 900);
       return;
     }
@@ -417,8 +460,12 @@ export default function App() {
         if (!cancelled) await handleSpotifyNow(now, spotifyToken);
       } catch (err) {
         if (cancelled) return;
-        notifyRef.current(err instanceof Error ? err.message : 'Falha ao ler o Spotify.');
-        setFollowSpotify(false);
+        // Falha passageira (rede): tenta de novo no próximo ciclo. Sessão perdida: desliga.
+        if (!isSpotifySessionSaved()) {
+          notifyRef.current(err instanceof Error ? err.message : 'Falha ao ler o Spotify.');
+          setFollowSpotify(false);
+          setSpotifyToken(null);
+        }
       }
     };
     poll();

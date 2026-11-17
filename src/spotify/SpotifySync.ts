@@ -79,7 +79,9 @@ export async function handleSpotifyCallback(): Promise<string | null> {
   const codeVerifier = localStorage.getItem('spotify_code_verifier');
 
   if (!code || !codeVerifier) {
-    return localStorage.getItem('spotify_access_token');
+    // Sessão salva: renova o token se ele já venceu, sem pedir login de novo.
+    if (!localStorage.getItem('spotify_access_token')) return null;
+    return getValidToken().catch(() => null);
   }
 
   const response = await fetch('https://accounts.spotify.com/api/token', {
@@ -96,8 +98,7 @@ export async function handleSpotifyCallback(): Promise<string | null> {
 
   const data = await response.json();
   if (data.access_token) {
-    localStorage.setItem('spotify_access_token', data.access_token);
-    localStorage.setItem('spotify_scope', data.scope ?? '');
+    saveTokens(data);
     localStorage.removeItem('spotify_code_verifier');
     window.history.replaceState({}, document.title, '/');
     return data.access_token;
@@ -105,17 +106,82 @@ export async function handleSpotifyCallback(): Promise<string | null> {
   return null;
 }
 
-export function logoutSpotify() {
-  localStorage.removeItem('spotify_access_token');
-  localStorage.removeItem('spotify_scope');
+interface TokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
 }
 
-async function spotifyFetch(endpoint: string, token: string, method = 'GET') {
+function saveTokens(data: TokenResponse) {
+  localStorage.setItem('spotify_access_token', data.access_token);
+  if (data.refresh_token) localStorage.setItem('spotify_refresh_token', data.refresh_token);
+  if (data.scope !== undefined) localStorage.setItem('spotify_scope', data.scope);
+  const expiresAt = Date.now() + (data.expires_in ?? 3600) * 1000;
+  localStorage.setItem('spotify_expires_at', String(expiresAt));
+}
+
+let refreshing: Promise<string> | null = null;
+
+/** Troca o refresh token por um access token novo (o do Spotify dura 1 hora). */
+async function refreshAccessToken(): Promise<string> {
+  if (refreshing) return refreshing;
+  const refreshToken = localStorage.getItem('spotify_refresh_token');
+  if (!refreshToken) throw new Error('Sessão do Spotify expirada. Conecte novamente.');
+  refreshing = (async () => {
+    try {
+      const res = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: SPOTIFY_CLIENT_ID,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.access_token) {
+        // Só desconecta se o Spotify recusou o refresh token; erro de rede mantém a sessão.
+        if (res.status === 400 || res.status === 401) logoutSpotify();
+        throw new Error('Sessão do Spotify expirada. Conecte novamente.');
+      }
+      saveTokens(data);
+      return data.access_token as string;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+/** Token válido para usar agora, renovando automaticamente quando faltar menos de 1 min. */
+export async function getValidToken(): Promise<string> {
+  const token = localStorage.getItem('spotify_access_token');
+  const expiresAt = Number(localStorage.getItem('spotify_expires_at') ?? 0);
+  if (token && expiresAt - Date.now() > 60_000) return token;
+  return refreshAccessToken();
+}
+
+export const isSpotifySessionSaved = () => Boolean(localStorage.getItem('spotify_access_token'));
+
+export function logoutSpotify() {
+  ['spotify_access_token', 'spotify_refresh_token', 'spotify_expires_at', 'spotify_scope'].forEach((k) =>
+    localStorage.removeItem(k),
+  );
+}
+
+// O parâmetro token é mantido por compatibilidade; o token usado é sempre o mais recente e válido.
+async function spotifyFetch(endpoint: string, _token: string, method = 'GET', retried = false): Promise<any> {
+  const token = await getValidToken();
   const res = await fetch(`https://api.spotify.com/v1${endpoint}`, {
     method,
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) {
+    if (!retried) {
+      localStorage.setItem('spotify_expires_at', '0');
+      return spotifyFetch(endpoint, _token, method, true);
+    }
     logoutSpotify();
     throw new Error('Sessão do Spotify expirada. Conecte novamente.');
   }
