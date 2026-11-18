@@ -26,13 +26,13 @@ interface Props {
 export function PlayerBar(p: Props) {
   return (
     <footer className="fixed bottom-0 inset-x-0 z-30 border-t border-line bg-canvas/85 backdrop-blur-xl safe-bottom">
-      <div className="mx-auto max-w-[1440px] px-4 lg:px-6 pt-3 lg:pt-3 grid grid-cols-[1fr_auto] lg:grid-cols-[1fr_minmax(360px,560px)_1fr] items-center gap-x-4 gap-y-2">
+      <div className="mx-auto max-w-[1440px] px-4 xl:px-6 pt-3 xl:pt-3 grid grid-cols-[1fr_auto] xl:grid-cols-[1fr_minmax(360px,560px)_1fr] items-center gap-x-4 gap-y-2">
         {/* Faixa */}
         <div className="flex items-center gap-3 min-w-0">
           {p.track?.albumArt ? (
-            <img src={p.track.albumArt} alt="" className="w-11 h-11 rounded-xl object-cover shrink-0" />
+            <img src={p.track.albumArt} alt="" className="w-11 h-11 rounded-md object-cover shrink-0" />
           ) : (
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-strong/50 to-raised grid place-items-center shrink-0 border border-line">
+            <div className="w-11 h-11 rounded-md bg-raised grid place-items-center shrink-0 border border-line">
               <Music2 className="w-4 h-4 text-accent-soft" />
             </div>
           )}
@@ -43,8 +43,8 @@ export function PlayerBar(p: Props) {
         </div>
 
         {/* Controles */}
-        <div className="flex flex-col items-center gap-1 lg:order-none">
-          <div className="flex items-center gap-2 lg:gap-4">
+        <div className="flex flex-col items-center gap-1 xl:order-none">
+          <div className="flex items-center gap-2 xl:gap-4">
             <button onClick={p.onPrev} disabled={!p.canPlay} aria-label="Faixa anterior" className="p-2 text-ink-muted hover:text-ink disabled:opacity-40 transition">
               <SkipBack className="w-5 h-5" fill="currentColor" />
             </button>
@@ -52,7 +52,7 @@ export function PlayerBar(p: Props) {
               onClick={p.onToggle}
               disabled={!p.canPlay}
               aria-label={p.isPlaying ? 'Pausar' : 'Tocar'}
-              className="w-11 h-11 rounded-full bg-white text-canvas grid place-items-center shadow-[0_6px_24px_-6px_rgba(129,140,248,0.8)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition"
+              className="w-11 h-11 rounded-full bg-white text-canvas grid place-items-center shadow-sm hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition"
             >
               {p.isPlaying ? <Pause className="w-5 h-5" fill="currentColor" /> : <Play className="w-5 h-5 ml-0.5" fill="currentColor" />}
             </button>
@@ -60,7 +60,7 @@ export function PlayerBar(p: Props) {
               <SkipForward className="w-5 h-5" fill="currentColor" />
             </button>
           </div>
-          <div className="hidden lg:flex items-center gap-3 w-full">
+          <div className="hidden xl:flex items-center gap-3 w-full">
             <span className="font-mono text-[11px] text-ink-faint tnum w-10 text-right">{fmt(p.currentTime)}</span>
             <Range label="Posição da faixa" min={0} max={p.duration || 100} step={0.1} value={p.currentTime} onChange={p.onSeek} disabled={!p.track} />
             <span className="font-mono text-[11px] text-ink-faint tnum w-10">{fmt(p.duration)}</span>
@@ -68,7 +68,7 @@ export function PlayerBar(p: Props) {
         </div>
 
         {/* Volume (desktop) */}
-        <div className="hidden lg:flex items-center justify-end gap-2">
+        <div className="hidden xl:flex items-center justify-end gap-2">
           <button onClick={() => p.onVolume(p.volume > 0 ? 0 : 0.8)} aria-label="Silenciar" className="p-1.5 text-ink-muted hover:text-ink transition">
             {p.volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
@@ -78,7 +78,7 @@ export function PlayerBar(p: Props) {
         </div>
 
         {/* Progresso (mobile) */}
-        <div className="col-span-2 lg:hidden flex items-center gap-2 -mt-1">
+        <div className="col-span-2 xl:hidden flex items-center gap-2 -mt-1">
           <span className="font-mono text-[10px] text-ink-faint tnum w-8">{fmt(p.currentTime)}</span>
           <Range label="Posição da faixa" min={0} max={p.duration || 100} step={0.1} value={p.currentTime} onChange={p.onSeek} disabled={!p.track} />
           <span className="font-mono text-[10px] text-ink-faint tnum w-8 text-right">{fmt(p.duration)}</span>

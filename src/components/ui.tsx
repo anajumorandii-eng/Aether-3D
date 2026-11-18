@@ -5,18 +5,18 @@ export function Logo({ size = 36 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
       <defs>
         <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#1b2547" />
-          <stop offset="1" stopColor="#0d1426" />
+          <stop offset="0" stopColor="#2b3331" />
+          <stop offset="1" stopColor="#181a1b" />
         </linearGradient>
       </defs>
-      <rect width="40" height="40" rx="11" fill="url(#lg)" stroke="rgb(148 163 255 / 0.2)" />
-      <g fill="none" stroke="#818cf8">
+      <rect width="40" height="40" rx="11" fill="url(#lg)" stroke="rgb(180 193 189 / 0.2)" />
+      <g fill="none" stroke="#9cdec7">
         <circle cx="20" cy="20" r="12.5" strokeOpacity=".3" strokeWidth="1.2" />
         <circle cx="20" cy="20" r="8.5" strokeOpacity=".6" strokeWidth="1.2" />
         <circle cx="20" cy="20" r="4.5" strokeWidth="1.4" />
       </g>
-      <circle cx="20" cy="20" r="1.6" fill="#c7d2fe" />
-      <circle cx="28.8" cy="11.2" r="2.6" fill="#eef2ff" />
+      <circle cx="20" cy="20" r="1.6" fill="#c8ebde" />
+      <circle cx="28.8" cy="11.2" r="2.6" fill="#f4f5f5" />
     </svg>
   );
 }
@@ -69,7 +69,7 @@ export function PanelHeader({
   return (
     <div className="flex items-center justify-between gap-3 mb-4">
       <h2 className="flex items-center gap-2 text-[13px] font-semibold text-ink tracking-tight">
-        <span className="grid place-items-center w-7 h-7 rounded-lg bg-accent-wash text-accent">{icon}</span>
+        <span className="hidden">{icon}</span>
         {title}
       </h2>
       {aside}

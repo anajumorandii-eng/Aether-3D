@@ -49,10 +49,10 @@ export function Library(p: Props) {
   return (
     <div className="flex flex-col gap-4 min-h-0 h-full">
       <section className="panel p-5">
-        <PanelHeader icon={<AudioLines className="w-4 h-4" />} title="Fontes de áudio" />
+        <PanelHeader icon={<AudioLines className="w-4 h-4" />} title="Biblioteca" />
         <div className="grid grid-cols-2 gap-2">
           {p.connected ? (
-            <div className="col-span-2 flex items-center gap-3 rounded-xl border border-spotify/25 bg-spotify/[0.06] px-3 py-2.5">
+            <div className="col-span-2 flex items-center gap-3 rounded-md border border-spotify/25 bg-spotify/[0.06] px-3 py-2.5">
               <SpotifyGlyph className="w-5 h-5 text-spotify shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-ink">Spotify conectado</p>
@@ -68,27 +68,27 @@ export function Library(p: Props) {
           ) : (
             <button
               onClick={p.onConnect}
-              className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-spotify text-[#04130a] font-semibold text-sm py-2.5 hover:brightness-110 transition"
+              className="col-span-2 flex items-center justify-center gap-2 rounded-md bg-raised border border-line-strong text-ink font-semibold text-sm py-2.5 hover:brightness-110 transition"
             >
               <SpotifyGlyph className="w-4 h-4" /> Conectar Spotify
             </button>
           )}
           <button
             onClick={p.onImport}
-            className="flex items-center justify-center gap-2 rounded-xl border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised transition"
+            className="flex items-center justify-center gap-2 rounded-md border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised transition"
           >
             <FolderOpen className="w-4 h-4 text-accent" /> Arquivos
           </button>
           <button
             onClick={p.onDemo}
-            className="flex items-center justify-center gap-2 rounded-xl border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised transition"
+            className="flex items-center justify-center gap-2 rounded-md border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised transition"
           >
             <Sparkles className="w-4 h-4 text-accent" /> Demonstração
           </button>
         </div>
 
         {p.connected && (
-          <div className="mt-4 rounded-xl border border-line bg-sunken/70 p-3">
+          <div className="mt-4 rounded-md border border-line bg-sunken/70 p-3">
             <div className="flex items-center gap-3">
               <span className="grid place-items-center w-8 h-8 rounded-lg bg-spotify/10 text-spotify shrink-0">
                 <Radio className="w-4 h-4" />
@@ -146,7 +146,7 @@ export function Library(p: Props) {
                     onClick={() => p.onSelectPlaylist(pl.id)}
                     aria-pressed={active}
                     className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border transition ${
-                      active ? 'bg-spotify text-[#04130a] font-semibold border-spotify' : 'bg-sunken border-line text-ink-muted hover:text-ink'
+                      active ? 'bg-raised border border-line-strong text-ink font-semibold border-spotify' : 'bg-sunken border-line text-ink-muted hover:text-ink'
                     }`}
                   >
                     {pl.name}
@@ -174,8 +174,8 @@ export function Library(p: Props) {
         />
 
         {p.tracks.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-10 px-4 rounded-2xl border border-dashed border-line-strong">
-            <div className="w-12 h-12 rounded-2xl bg-accent-wash grid place-items-center text-accent mb-3">
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-10 px-4 rounded-lg border border-dashed border-line-strong">
+            <div className="w-12 h-12 rounded-lg bg-accent-wash grid place-items-center text-accent mb-3">
               <Music2 className="w-5 h-5" />
             </div>
             <p className="text-sm font-medium text-ink">Sua fila está vazia</p>
@@ -195,7 +195,7 @@ export function Library(p: Props) {
                 <HardDrive className="w-3 h-3" /> Músicas importadas ficam salvas neste aparelho
               </p>
             )}
-            <ol className="space-y-1 overflow-y-auto thin-scrollbar -mx-2 px-2 max-h-[340px] lg:max-h-[480px] min-h-0">
+            <ol className="space-y-1 overflow-y-auto thin-scrollbar -mx-2 px-2 max-h-[340px] xl:max-h-[480px] min-h-0">
               {p.tracks.map((track, idx) => {
                 const playable = Boolean(track.url);
                 const current = idx === p.currentIndex && playable;
@@ -205,7 +205,7 @@ export function Library(p: Props) {
                       onClick={() => playable && p.onPlayTrack(idx)}
                       disabled={!playable}
                       aria-current={current ? 'true' : undefined}
-                      className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition ${
+                      className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-md text-left transition ${
                         current
                           ? 'bg-accent-wash ring-1 ring-accent/40'
                           : playable
@@ -219,7 +219,7 @@ export function Library(p: Props) {
                       {track.albumArt ? (
                         <img src={track.albumArt} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
                       ) : (
-                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-strong/40 to-raised grid place-items-center shrink-0">
+                        <div className="w-9 h-9 rounded-lg bg-raised grid place-items-center shrink-0">
                           <Music2 className="w-4 h-4 text-accent-soft" />
                         </div>
                       )}
@@ -234,7 +234,7 @@ export function Library(p: Props) {
                       <button
                         onClick={() => p.onRemoveTrack(track.url!)}
                         aria-label={`Remover ${track.name} da biblioteca`}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-ink-faint hover:text-red-300 hover:bg-raised transition lg:opacity-0 lg:group-hover/row:opacity-100 focus-visible:opacity-100"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-ink-faint hover:text-red-300 hover:bg-raised transition xl:opacity-0 xl:group-hover/row:opacity-100 focus-visible:opacity-100"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

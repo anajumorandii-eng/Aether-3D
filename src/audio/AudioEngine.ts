@@ -24,6 +24,8 @@ export class SpatialAudioEngine {
   private convolverNode: ConvolverNode | null = null;
   private dryGain: GainNode | null = null;
   private wetGain: GainNode | null = null;
+  private spatialGain: GainNode | null = null;
+  private stereoGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
   private isInitialized = false;
@@ -95,6 +97,12 @@ export class SpatialAudioEngine {
     this.compressorNode.attack.value = 0.005;
     this.compressorNode.release.value = 0.15;
 
+    // Crossfade between the binaural path and the original stereo path.
+    this.spatialGain = this.ctx.createGain();
+    this.stereoGain = this.ctx.createGain();
+    this.spatialGain.gain.value = 1;
+    this.stereoGain.gain.value = 0;
+
     // 6. Analisador de espectro FFT
     this.analyserNode = this.ctx.createAnalyser();
     this.analyserNode.fftSize = 256;
@@ -108,11 +116,31 @@ export class SpatialAudioEngine {
     this.convolverNode.connect(this.wetGain);
     this.dryGain.connect(this.pannerNode);
     this.wetGain.connect(this.pannerNode);
-    this.pannerNode.connect(this.compressorNode);
+    this.pannerNode.connect(this.spatialGain);
+    this.spatialGain.connect(this.compressorNode);
+    this.dryGain.connect(this.stereoGain);
+    this.wetGain.connect(this.stereoGain);
+    this.stereoGain.connect(this.compressorNode);
     this.compressorNode.connect(this.analyserNode);
     this.analyserNode.connect(this.ctx.destination);
 
     this.isInitialized = true;
+  }
+
+  public setSpatialEnabled(enabled: boolean) {
+    if (!this.ctx || !this.spatialGain || !this.stereoGain) return;
+    this.spatialGain.gain.setTargetAtTime(enabled ? 1 : 0, this.ctx.currentTime, 0.02);
+    this.stereoGain.gain.setTargetAtTime(enabled ? 0 : 1, this.ctx.currentTime, 0.02);
+  }
+
+  public setNightMode(enabled: boolean) {
+    if (!this.ctx || !this.compressorNode) return;
+    const t = this.ctx.currentTime;
+    this.compressorNode.threshold.setTargetAtTime(enabled ? -26 : -6, t, 0.03);
+    this.compressorNode.knee.setTargetAtTime(enabled ? 24 : 12, t, 0.03);
+    this.compressorNode.ratio.setTargetAtTime(enabled ? 6 : 4, t, 0.03);
+    this.compressorNode.attack.setTargetAtTime(enabled ? 0.003 : 0.005, t, 0.03);
+    this.compressorNode.release.setTargetAtTime(enabled ? 0.3 : 0.15, t, 0.03);
   }
 
   public get ready() {

@@ -28,7 +28,7 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
     const el = wrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      setSize(Math.max(240, Math.min(440, Math.floor(entry.contentRect.width))));
+      setSize(Math.max(1, Math.min(window.matchMedia('(max-width: 639px)').matches ? 260 : 360, Math.floor(entry.contentRect.width))));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -51,7 +51,7 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
     const padR = size * 0.36;
     let raf = 0;
 
-    const render = (t: number) => {
+    const render = (_t: number) => {
       ctx.clearRect(0, 0, size, size);
       const hasData = isPlaying && getFrequencyData(data);
 
@@ -60,8 +60,8 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
       if (hasData) for (let b = 0; b < 6; b++) bass += data[b];
       const bassNorm = bass / (6 * 255);
       const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, padR);
-      glow.addColorStop(0, `rgba(99,102,241,${0.1 + bassNorm * 0.28})`);
-      glow.addColorStop(1, 'rgba(99,102,241,0)');
+      glow.addColorStop(0, `rgba(36,125,152,${0.015 + bassNorm * 0.1})`);
+      glow.addColorStop(1, 'rgba(36,125,152,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
       ctx.arc(cx, cy, padR, 0, Math.PI * 2);
@@ -70,14 +70,14 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
       // Anéis de distância
       ctx.lineWidth = 1;
       [1, 0.66, 0.33].forEach((k, i) => {
-        ctx.strokeStyle = `rgba(148,163,255,${0.22 - i * 0.05})`;
+        ctx.strokeStyle = `rgba(133,146,159,${0.22 - i * 0.05})`;
         ctx.setLineDash(i === 0 ? [] : [2, 4]);
         ctx.beginPath();
         ctx.arc(cx, cy, padR * k, 0, Math.PI * 2);
         ctx.stroke();
       });
       ctx.setLineDash([2, 5]);
-      ctx.strokeStyle = 'rgba(148,163,255,0.12)';
+      ctx.strokeStyle = 'rgba(133,146,159,0.12)';
       ctx.beginPath();
       ctx.moveTo(cx - padR, cy);
       ctx.lineTo(cx + padR, cy);
@@ -90,8 +90,8 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
       const sx = cx + posRef.current.x * padR;
       const sy = cy + posRef.current.z * padR;
       const beam = ctx.createLinearGradient(cx, cy, sx, sy);
-      beam.addColorStop(0, 'rgba(129,140,248,0)');
-      beam.addColorStop(1, 'rgba(129,140,248,0.55)');
+      beam.addColorStop(0, 'rgba(104,204,232,0)');
+      beam.addColorStop(1, 'rgba(104,204,232,0.55)');
       ctx.strokeStyle = beam;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -107,14 +107,14 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
         const bin = Math.min(85, Math.floor((mirror / (BARS / 2)) * 75));
         const target = hasData
           ? data[bin] / 255
-          : 0.05 + 0.04 * Math.sin(t / 900 + i * 0.35) * Math.sin(t / 1400 + i * 0.13);
+          : 0.03;
         smooth[i] += (target - smooth[i]) * 0.35;
         const v = Math.max(0, smooth[i]);
         const amp = Math.pow(v, 1.35) * maxAmp + 2;
         const a = (i / BARS) * Math.PI * 2 - Math.PI / 2;
         const cos = Math.cos(a);
         const sin = Math.sin(a);
-        ctx.strokeStyle = v > 0.08 ? `rgba(165,180,252,${0.3 + v * 0.7})` : 'rgba(148,163,255,0.22)';
+        ctx.strokeStyle = v > 0.08 ? `rgba(104,204,232,${0.3 + v * 0.7})` : 'rgba(133,146,159,0.22)';
         ctx.lineWidth = Math.max(1.5, size / 200);
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -197,8 +197,8 @@ export function SpatialStage({ pos, onMove, isPlaying, getFrequencyData }: Props
             className="absolute left-1/2 top-1/2 pointer-events-none"
             style={{ transform: `translate(calc(-50% + ${pos.x * padSize * 0.5}px), calc(-50% + ${pos.z * padSize * 0.5}px))` }}
           >
-            <span className="absolute inset-0 rounded-full bg-accent/40 animate-ping" style={{ animationDuration: isPlaying ? '1.6s' : '0s', opacity: isPlaying ? 1 : 0 }} />
-            <div className="relative w-8 h-8 rounded-full bg-accent-strong border-2 border-white/90 grid place-items-center shadow-[0_0_24px_rgba(99,102,241,0.85)]">
+
+            <div className="relative w-8 h-8 rounded-full bg-accent-strong border-2 border-white/90 grid place-items-center shadow-lg">
               <div className="w-2 h-2 rounded-full bg-white" />
             </div>
           </div>

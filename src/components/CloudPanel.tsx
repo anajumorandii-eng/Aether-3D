@@ -78,7 +78,7 @@ export function CloudPanel({ configured, status, onConnect, onSync, onDisconnect
           </p>
           <button
             onClick={() => setEditing(true)}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised transition"
+            className="w-full flex items-center justify-center gap-2 rounded-md border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised transition"
           >
             <CloudDownload className="w-4 h-4 text-accent" /> Conectar armazenamento
           </button>
@@ -99,20 +99,20 @@ export function CloudPanel({ configured, status, onConnect, onSync, onDisconnect
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://conta.blob.core.windows.net/musicas?sv=…"
-            className="w-full rounded-xl bg-sunken border border-line-strong px-3 py-2.5 text-xs font-mono text-ink placeholder:text-ink-faint select-text focus:outline-none focus:border-accent"
+            className="w-full rounded-md bg-sunken border border-line-strong px-3 py-2.5 text-xs font-mono text-ink placeholder:text-ink-faint select-text focus:outline-none focus:border-accent"
           />
           <p className="text-[11px] text-ink-faint">Fica salva só neste aparelho.</p>
           <div className="flex gap-2">
             <button
               onClick={() => setEditing(false)}
-              className="flex-1 rounded-xl border border-line text-xs py-2.5 text-ink-muted hover:text-ink transition"
+              className="flex-1 rounded-md border border-line text-xs py-2.5 text-ink-muted hover:text-ink transition"
             >
               Cancelar
             </button>
             <button
               onClick={submit}
               disabled={!url.trim() || busy}
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent-strong text-white text-xs font-semibold py-2.5 disabled:opacity-40 transition"
+              className="flex-1 flex items-center justify-center gap-2 rounded-md bg-accent-strong text-white text-xs font-semibold py-2.5 disabled:opacity-40 transition"
             >
               {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Conectar
             </button>
@@ -121,7 +121,7 @@ export function CloudPanel({ configured, status, onConnect, onSync, onDisconnect
       )}
 
       {configured && (
-        <div className="rounded-xl bg-sunken/70 border border-line p-3">
+        <div className="rounded-md bg-sunken/70 border border-line p-3">
           {status.phase === 'downloading' ? (
             <>
               <div className="flex items-center justify-between text-xs mb-2">

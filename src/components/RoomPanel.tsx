@@ -32,7 +32,7 @@ export function RoomPanel({ room, mix, onRoom, onMix }: Props) {
               key={id}
               onClick={() => onRoom(id)}
               aria-pressed={active}
-              className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 transition ${
+              className={`flex flex-col items-center gap-1.5 rounded-md border px-1 py-3 transition ${
                 active
                   ? 'bg-accent-wash border-accent/60 text-ink'
                   : 'bg-sunken/70 border-line text-ink-muted hover:text-ink hover:border-line-strong'

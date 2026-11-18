@@ -35,3 +35,9 @@ swa deploy ./dist --env production
 5. No app, em **Biblioteca → Nuvem · Azure → Conectar armazenamento**, cole a URL SAS.
 
 O app baixa as músicas novas ao abrir e ao voltar para a tela, e remove do aparelho as que forem apagadas da nuvem.
+
+## Modos de escuta e personalização
+
+Em **Som 3D**, escolha um modo pronto ou toque em **Personalizar**. Os ajustes são aplicados durante a reprodução: equalizador de 10 bandas, ambiente e reverberação, espacialização, órbita, posição, elevação e modo noturno.
+
+Dê um nome e toque em **Salvar modo** para adicioná-lo a **Meus modos**. Até 12 configurações ficam salvas neste navegador; salvar com o mesmo nome atualiza a configuração existente. Excluir um modo não altera o som em reprodução.

@@ -74,7 +74,7 @@ function BandSlider({ freq, value, onChange }: { freq: number; value: number; on
           style={{ top: `${Math.min(top, zero)}%`, height: `${Math.abs(top - zero)}%` }}
         />
         <div
-          className="absolute w-4 h-4 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_4px_rgba(129,140,248,0.22),0_2px_6px_rgba(0,0,0,0.5)] transition-transform group-active:scale-110"
+          className="absolute w-4 h-4 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_4px_rgba(104,204,232,0.22),0_2px_6px_rgba(0,0,0,0.5)] transition-transform group-active:scale-110"
           style={{ top: `${top}%` }}
         />
       </div>
@@ -117,7 +117,7 @@ export function Equalizer({ gains, activePreset, onPreset, onBand }: Props) {
                 aria-pressed={active}
                 className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border transition ${
                   active
-                    ? 'bg-accent-strong border-accent text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)]'
+                    ? 'bg-accent-strong border-accent text-white shadow-sm'
                     : 'bg-sunken border-line text-ink-muted hover:text-ink hover:border-line-strong'
                 }`}
               >
@@ -128,7 +128,7 @@ export function Equalizer({ gains, activePreset, onPreset, onBand }: Props) {
         )}
       </div>
 
-      <div className="relative rounded-2xl bg-sunken/70 border border-line px-2 pt-2 pb-2">
+      <div className="relative rounded-lg bg-sunken/70 border border-line px-2 pt-2 pb-2">
         <svg
           className="absolute left-2 right-2 pointer-events-none"
           style={{ top: 28, height: 144, width: 'calc(100% - 16px)' }}
@@ -138,13 +138,13 @@ export function Equalizer({ gains, activePreset, onPreset, onBand }: Props) {
         >
           <defs>
             <linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#818cf8" stopOpacity="0.28" />
-              <stop offset="1" stopColor="#818cf8" stopOpacity="0" />
+              <stop offset="0" stopColor="#9cdec7" stopOpacity="0.28" />
+              <stop offset="1" stopColor="#9cdec7" stopOpacity="0" />
             </linearGradient>
           </defs>
-          <line x1="0" x2="100" y1="50" y2="50" stroke="rgb(148 163 255 / 0.18)" strokeDasharray="1 2" vectorEffect="non-scaling-stroke" />
+          <line x1="0" x2="100" y1="50" y2="50" stroke="rgb(180 193 189 / 0.18)" strokeDasharray="1 2" vectorEffect="non-scaling-stroke" />
           <path d={`${curvePath(gains)} L100 100 L0 100 Z`} fill="url(#eqfill)" />
-          <path d={curvePath(gains)} fill="none" stroke="#a5b4fc" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+          <path d={curvePath(gains)} fill="none" stroke="var(--color-accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         </svg>
         <div className="relative grid grid-cols-10 gap-0.5">
           {EQ_FREQUENCIES.map((f, i) => (
