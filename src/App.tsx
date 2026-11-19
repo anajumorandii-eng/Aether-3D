@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { FolderOpen, Library as LibraryIcon, Orbit, Sliders, Sparkles, X } from 'lucide-react';
 import { EQ_PRESETS, SpatialAudioEngine, type RoomType } from './audio/AudioEngine';
-import { LISTENING_MODES, createDjMode, type ListeningMode } from './audio/listeningModes';
+import { LISTENING_MODES, createDjMode, upgradeListeningMode, type ListeningMode } from './audio/listeningModes';
 import { createDemoTrackUrl } from './audio/demoTrack';
 import { clearCloudUrl, displayName, downloadCloudBlob, getCloudUrl, listCloudAudio, parseSasUrl, setCloudUrl } from './cloud/BlobSync';
 import { CloudPanel, type CloudStatus } from './components/CloudPanel';
@@ -30,6 +30,7 @@ import { RoomPanel } from './components/RoomPanel';
 import { Library, type PlayableTrack } from './components/Library';
 import { useAccount } from './account/useAccount';
 import { parseSound, parseModes, parseSpotify, type AccountSettings, type SettingsPatch } from './account/settings';
+import { AdaptiveStage } from './components/AdaptiveStage';
 import { DjLevels } from './components/DjLevels';
 import { AccountPanel } from './components/AccountPanel';
 import { CustomizeSound } from './components/CustomizeSound';
@@ -97,16 +98,18 @@ export default function App() {
   // Espaço 3D
   const [pos, setPos] = useState<StagePos>({ x: 0, z: -0.7 });
   const [elevation, setElevation] = useState(0);
-  const [autoOrbit, setAutoOrbit] = useState(true);
-  const [orbitSpeed, setOrbitSpeed] = useState(0.35);
+  const autoOrbit = false;
+  const orbitSpeed = 0.35;
+  const [adaptiveEnabled, setAdaptiveEnabled] = useState(true);
+  const [adaptiveIntensity, setAdaptiveIntensity] = useState(65);
 
   // Som
   const [djIntensity, setDjIntensity] = useState(65);
   const [preferredModeId, setPreferredModeId] = useState<string>('immersive');
   const [spatialEnabled, setSpatialEnabled] = useState(true);
   const [nightMode, setNightMode] = useState(false);
-  const [activePreset, setActivePreset] = useState('Palco Amplo');
-  const [eqGains, setEqGains] = useState<number[]>(EQ_PRESETS[1].gains);
+  const [activePreset, setActivePreset] = useState('Neutro');
+  const [eqGains, setEqGains] = useState<number[]>(EQ_PRESETS[0].gains);
   const [roomType, setRoomType] = useState<RoomType>('studio');
   const [reverbMix, setReverbMix] = useState(0.2);
 
@@ -152,8 +155,8 @@ export default function App() {
   notifyRef.current = notify;
 
   // ---------- Reprodução ----------
-  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode });
-  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode };
+  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity });
+  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity };
 
   const pendingSeekRef = useRef<number | null>(null);
 
@@ -165,6 +168,9 @@ export default function App() {
     engine.init();
     engine.applyPreset(s.eqGains);
     engine.setSpatialEnabled(s.spatialEnabled);
+    engine.setAdaptiveEnabled(s.adaptiveEnabled);
+    engine.setAdaptiveIntensity(s.adaptiveIntensity);
+    engine.resetAdaptiveAnalysis();
     engine.setNightMode(s.nightMode);
     engine.setRoomType(s.roomType);
     engine.setReverbMix(s.roomType === 'off' ? 0 : s.reverbMix);
@@ -270,19 +276,6 @@ export default function App() {
     engineRef.current?.setPosition(pos.x * 3, elevation * 2, pos.z * 3);
   }, [pos, elevation]);
 
-  useEffect(() => {
-    if (!autoOrbit || !isPlaying) return;
-    let frame = 0;
-    let angle = Math.atan2(settingsRef.current.pos.z, settingsRef.current.pos.x);
-    const radius = Math.max(0.35, Math.min(0.9, Math.hypot(settingsRef.current.pos.x, settingsRef.current.pos.z)));
-    const animate = () => {
-      angle += 0.015 * orbitSpeed;
-      setPos({ x: Math.cos(angle) * radius, z: Math.sin(angle) * radius });
-      frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [autoOrbit, isPlaying, orbitSpeed]);
 
   const azimuth = Math.round((Math.atan2(pos.x, -pos.z) * 180) / Math.PI);
   const distance = Math.hypot(pos.x, pos.z) * 3;
@@ -316,36 +309,27 @@ export default function App() {
     engineRef.current?.setReverbMix(v);
   };
 
-  const changeOrbit = (enabled: boolean) => {
-    setAutoOrbit(enabled);
-    if (enabled) {
-      setSpatialEnabled(true);
-      engineRef.current?.setSpatialEnabled(true);
-      const radius = Math.hypot(pos.x, pos.z);
-      const bounded = Math.max(0.35, Math.min(0.9, radius));
-      if (radius === 0) setPos({ x: 0, z: -bounded });
-      else if (Math.abs(radius - bounded) > 0.001) setPos({ x: pos.x * bounded / radius, z: pos.z * bounded / radius });
-    }
-  };
 
-  const modesByPreference = [...LISTENING_MODES.map(mode => mode.id === 'dj' ? createDjMode(djIntensity) : mode), ...customModes].sort((a, b) => Number(b.id === preferredModeId) - Number(a.id === preferredModeId));
+  const modesByPreference = [...LISTENING_MODES.map(mode => mode.id === 'dj' ? createDjMode(djIntensity) : mode), ...customModes].map(upgradeListeningMode).sort((a, b) => Number(b.id === preferredModeId) - Number(a.id === preferredModeId));
   const activeMode = modesByPreference.find((mode) =>
     mode.eq.gains.every((gain, i) => gain === eqGains[i]) &&
     mode.room === roomType && mode.mix === reverbMix && mode.spatial === spatialEnabled && mode.night === nightMode &&
-    mode.orbit === autoOrbit && mode.speed === orbitSpeed && mode.elevation === elevation &&
-    (autoOrbit
-      ? Math.abs(Math.hypot(pos.x, pos.z) - Math.hypot(mode.position.x, mode.position.z)) < 0.001
-      : mode.position.x === pos.x && mode.position.z === pos.z),
+    Boolean(mode.adaptive) === adaptiveEnabled &&
+    (mode.adaptive ? mode.adaptiveIntensity === adaptiveIntensity : mode.elevation === elevation && mode.position.x === pos.x && mode.position.z === pos.z),
   );
 
-  const applyListeningMode = (mode: ListeningMode, announce = true) => {
+  const applyListeningMode = (rawMode: ListeningMode, announce = true) => {
+    const mode = upgradeListeningMode(rawMode);
+    setAdaptiveEnabled(Boolean(mode.adaptive));
+    setAdaptiveIntensity(mode.adaptiveIntensity ?? 65);
+    engineRef.current?.setAdaptiveEnabled(Boolean(mode.adaptive));
+    engineRef.current?.setAdaptiveIntensity(mode.adaptiveIntensity ?? 65);
     if (mode.djIntensity !== undefined) setDjIntensity(mode.djIntensity);
     setPreferredModeId(mode.id);
     selectPreset(mode.eq.name, [...mode.eq.gains]);
     changeRoom(mode.room);
     changeMix(mode.mix);
-    setAutoOrbit(mode.orbit);
-    setOrbitSpeed(mode.speed);
+
     setPos({ ...mode.position });
     setElevation(mode.elevation);
     setSpatialEnabled(mode.spatial);
@@ -367,6 +351,7 @@ export default function App() {
       description: 'Sua configuração de áudio.', eq: { name: activePreset, gains: [...eqGains] },
       room: roomType, mix: reverbMix, orbit: autoOrbit, speed: orbitSpeed,
       position: { ...pos }, elevation, spatial: spatialEnabled, night: nightMode,
+      adaptive: adaptiveEnabled, adaptiveIntensity,
       ...((preferredModeId === 'dj' || activeMode?.djIntensity !== undefined) ? { djIntensity } : {}),
     };
     const next = existing ? customModes.map(m => m.id === mode.id ? mode : m) : [...customModes, mode];
@@ -777,11 +762,11 @@ export default function App() {
   };
 
   // Exclude volume, playback, OAuth credentials and the animated orbit angle.
-  const orbitRadius = Math.round(Math.hypot(pos.x, pos.z) * 1000) / 1000;
+
   const accountSettings: AccountSettings = {
     sound: JSON.stringify({ modeId: preferredModeId, djIntensity, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
-      spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed,
-      position: autoOrbit ? { x: 0, z: -orbitRadius } : pos, elevation }),
+      spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed, adaptive: adaptiveEnabled, adaptiveIntensity,
+      position: pos, elevation }),
     customModes: JSON.stringify(customModes), spotify: JSON.stringify({ playlistId: selectedPlaylist, refreshRevision: spotifyRefreshRevision }), cloudUrl: cloudUrl ?? '',
   };
   const applyAccountSettings = (patch: SettingsPatch) => {
@@ -790,8 +775,12 @@ export default function App() {
       setPreferredModeId(sound.modeId ?? '');
       if (sound.djIntensity !== undefined) setDjIntensity(sound.djIntensity);
       setEqGains(sound.gains); setActivePreset(sound.preset); setRoomType(sound.room); setReverbMix(sound.mix);
-      setSpatialEnabled(sound.spatial); setNightMode(sound.night); setAutoOrbit(sound.orbit);
-      setOrbitSpeed(sound.speed); setPos(sound.position); setElevation(sound.elevation);
+      const adaptive = sound.adaptive ?? (sound.orbit || sound.modeId === 'immersive' || sound.modeId === 'dj');
+      const intensity = sound.adaptiveIntensity ?? sound.djIntensity ?? 65;
+      setSpatialEnabled(sound.spatial); setNightMode(sound.night);
+      setAdaptiveEnabled(adaptive); setAdaptiveIntensity(intensity);
+      engineRef.current?.setAdaptiveEnabled(adaptive); engineRef.current?.setAdaptiveIntensity(intensity);
+      setPos(sound.position); setElevation(sound.elevation);
       const engine = engineRef.current;
       engine?.applyPreset(sound.gains); engine?.setRoomType(sound.room); engine?.setReverbMix(sound.mix);
       engine?.setSpatialEnabled(sound.spatial); engine?.setNightMode(sound.night);
@@ -814,6 +803,7 @@ export default function App() {
   const account = useAccount(accountSettings, applyAccountSettings);
   accountIdentityRef.current = account.user?.uid ?? null;
 
+  const readAdaptiveAnalysis = useCallback(() => engineRef.current?.getAdaptiveAnalysis() ?? null, []);
   const engineActive = isPlaying && Boolean(engineRef.current?.ready);
 
   const library = (
@@ -951,24 +941,19 @@ export default function App() {
           <section className="stage-panel px-5 pb-5 sm:px-7 flex-1 flex flex-col">
             <PanelHeader
               icon={<Orbit className="w-4 h-4" />}
-              title="Som 3D"
-              aside={
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-ink-muted">Órbita</span>
-                  <Toggle checked={autoOrbit} onChange={changeOrbit} label="Órbita automática" />
-                </div>
-              }
+              title={adaptiveEnabled ? 'Imersão adaptativa' : 'Posicionamento manual'}
             />
 
             <div className="flex items-center justify-between mt-4 mb-2 gap-3 text-xs text-ink-muted">
-              <span>Espacialização binaural</span>
-              <Toggle checked={spatialEnabled} onChange={(enabled) => { setSpatialEnabled(enabled); if (!enabled) setAutoOrbit(false); engineRef.current?.setSpatialEnabled(enabled); }} label="Espacialização binaural" />
+              <span>Processamento espacial</span>
+              <Toggle checked={spatialEnabled} onChange={(enabled) => { setSpatialEnabled(enabled); engineRef.current?.setSpatialEnabled(enabled); }} label="Processamento espacial" />
             </div>
+            <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Adaptar à música</span><Toggle checked={adaptiveEnabled} onChange={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }} label="Adaptar à música" /></div>
+            {adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
             <div inert={!spatialEnabled} className={`flex-1 grid place-items-center py-2 ${spatialEnabled ? '' : 'opacity-35'}`}>
               <SpatialStage
                 pos={pos}
                 onMove={(p) => {
-                  setAutoOrbit(false);
                   setPos(p);
                 }}
                 isPlaying={isPlaying}
@@ -989,11 +974,10 @@ export default function App() {
               <Field label="Elevação vertical (eixo Y)" value={`${elevation > 0 ? '+' : ''}${elevation.toFixed(1)}`}>
                 <Range label="Elevação vertical" min={-1} max={1} step={0.1} value={elevation} onChange={setElevation} />
               </Field>
-              <Field label="Velocidade da órbita" value={`${orbitSpeed.toFixed(1)}×`}>
-                <Range label="Velocidade da órbita" min={0.2} max={2} step={0.1} value={orbitSpeed} onChange={setOrbitSpeed} disabled={!autoOrbit} />
-              </Field>
+
             </div>
             </details>
+            </>}
           </section>
 
 
@@ -1027,12 +1011,13 @@ export default function App() {
       {customizing && <CustomizeSound onClose={() => setCustomizing(false)} onSave={saveCurrentMode}
         gains={eqGains} activePreset={activePreset} onPreset={selectPreset} onBand={changeBand}
         room={roomType} mix={reverbMix} onRoom={changeRoom} onMix={changeMix}
-        spatial={spatialEnabled} night={nightMode} orbit={autoOrbit}
-        onSpatial={enabled => { setSpatialEnabled(enabled); if (!enabled) setAutoOrbit(false); engineRef.current?.setSpatialEnabled(enabled); }}
+        spatial={spatialEnabled} night={nightMode} adaptive={adaptiveEnabled} adaptiveIntensity={adaptiveIntensity}
+        onSpatial={enabled => { setSpatialEnabled(enabled); engineRef.current?.setSpatialEnabled(enabled); }}
         onNight={enabled => { setNightMode(enabled); engineRef.current?.setNightMode(enabled); }}
-        onOrbit={changeOrbit}
+        onAdaptive={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }}
+        onAdaptiveIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }}
         position={pos} onPosition={setPos} elevation={elevation} onElevation={setElevation}
-        speed={orbitSpeed} onSpeed={setOrbitSpeed} />}
+        />}
 
       {toast && (
         <div role="status" className="fixed z-40 left-1/2 -translate-x-1/2 bottom-36 xl:bottom-28 animate-fade-up w-[min(92vw,440px)]">

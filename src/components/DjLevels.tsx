@@ -8,6 +8,6 @@ export function DjLevels({ intensity, onIntensity }: { intensity: number; onInte
       {DJ_LEVELS.map(level => <button key={level.name} onClick={() => onIntensity(level.intensity)} aria-pressed={intensity === level.intensity} className={`rounded-md border text-xs font-medium transition-colors ${intensity === level.intensity ? 'border-accent bg-accent-wash text-accent' : 'border-line-strong text-ink-muted hover:text-ink'}`}>{level.name}</button>)}
     </div>
     <Range label="Intensidade DJ" min={0} max={100} step={1} value={intensity} onChange={onIntensity} />
-    <p className="text-xs leading-relaxed text-ink-muted mt-2">Ajusta os efeitos e a velocidade do movimento. O volume do player permanece no seu controle. Use Personalizar para ajustar cada efeito ou salvar seu modo.</p>
+    <p className="text-xs leading-relaxed text-ink-muted mt-2">Ajusta a força dos efeitos e da adaptação estéreo, sem rotação. O volume do player permanece no seu controle. Use Personalizar para ajustar cada efeito ou salvar seu modo.</p>
   </section>;
 }

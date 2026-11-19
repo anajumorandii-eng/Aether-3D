@@ -17,16 +17,17 @@ interface Props {
   onMix: (mix: number) => void;
   spatial: boolean;
   night: boolean;
-  orbit: boolean;
+  adaptive: boolean;
+  adaptiveIntensity: number;
   onSpatial: (enabled: boolean) => void;
   onNight: (enabled: boolean) => void;
-  onOrbit: (enabled: boolean) => void;
+  onAdaptive: (enabled: boolean) => void;
+  onAdaptiveIntensity: (value: number) => void;
   position: { x: number; z: number };
   onPosition: (position: { x: number; z: number }) => void;
   elevation: number;
   onElevation: (value: number) => void;
-  speed: number;
-  onSpeed: (value: number) => void;
+
 }
 
 export function CustomizeSound(p: Props) {
@@ -47,15 +48,15 @@ export function CustomizeSound(p: Props) {
         <RoomPanel room={p.room} mix={p.mix} onRoom={p.onRoom} onMix={p.onMix} />
         <section className="panel p-5 space-y-4" aria-label="Efeitos personalizados">
           {[
-            ['Espacialização 3D', p.spatial, p.onSpatial],
-            ['Órbita automática', p.orbit, p.onOrbit],
+            ['Processamento espacial', p.spatial, p.onSpatial],
+            ['Adaptar à música', p.adaptive, p.onAdaptive],
             ['Modo noturno', p.night, p.onNight],
           ].map(([label, checked, change]) => <div key={String(label)} className="flex justify-between items-center gap-3 text-sm"><span>{String(label)}</span><Toggle label={String(label)} checked={Boolean(checked)} onChange={change as (v: boolean) => void} /></div>)}
-          <p className="text-xs text-ink-muted">O modo noturno comprime os picos. Desligar o 3D mantém o estéreo e desativa a órbita.</p>
-          <Field label="Velocidade da órbita" value={`${p.speed.toFixed(1)}×`}><Range label="Velocidade personalizada" min={0.2} max={2} step={0.1} value={p.speed} onChange={p.onSpeed} disabled={!p.orbit} /></Field>
-          <Field label="Posição lateral" value={p.position.x.toFixed(1)}><Range label="Posição lateral" min={-1} max={1} step={0.1} value={p.position.x} onChange={x => p.onPosition({ ...p.position, x })} disabled={!p.spatial || p.orbit} /></Field>
-          <Field label="Frente / trás" value={p.position.z.toFixed(1)}><Range label="Frente / trás" min={-1} max={1} step={0.1} value={p.position.z} onChange={z => p.onPosition({ ...p.position, z })} disabled={!p.spatial || p.orbit} /></Field>
-          <Field label="Elevação" value={p.elevation.toFixed(1)}><Range label="Elevação personalizada" min={-1} max={1} step={0.1} value={p.elevation} onChange={p.onElevation} disabled={!p.spatial} /></Field>
+          <p className="text-xs text-ink-muted">O modo noturno comprime os picos. Desligar o 3D mantém o estéreo. A adaptação preserva o centro da mixagem, sem rotação.</p>
+          <Field label="Intensidade da adaptação" value={`${p.adaptiveIntensity}%`}><Range label="Intensidade adaptativa personalizada" min={0} max={100} step={1} value={p.adaptiveIntensity} onChange={p.onAdaptiveIntensity} disabled={!p.spatial || !p.adaptive} /></Field>
+          <Field label="Posição lateral" value={p.position.x.toFixed(1)}><Range label="Posição lateral" min={-1} max={1} step={0.1} value={p.position.x} onChange={x => p.onPosition({ ...p.position, x })} disabled={!p.spatial || p.adaptive} /></Field>
+          <Field label="Frente / trás" value={p.position.z.toFixed(1)}><Range label="Frente / trás" min={-1} max={1} step={0.1} value={p.position.z} onChange={z => p.onPosition({ ...p.position, z })} disabled={!p.spatial || p.adaptive} /></Field>
+          <Field label="Elevação" value={p.elevation.toFixed(1)}><Range label="Elevação personalizada" min={-1} max={1} step={0.1} value={p.elevation} onChange={p.onElevation} disabled={!p.spatial || p.adaptive} /></Field>
         </section>
         <form onSubmit={e => { e.preventDefault(); if (p.onSave(name.trim())) p.onClose(); else setSaveError(true); }} className="panel p-5 space-y-3">
           <label htmlFor="custom-mode-name" className="block text-sm font-medium">Salvar como meu modo</label>

@@ -1,3 +1,4 @@
+import { AdaptiveImmersion } from './AdaptiveImmersion';
 import { PlaybackSession } from './PlaybackSession';
 
 export interface EQPreset {
@@ -32,6 +33,11 @@ export class SpatialAudioEngine {
   private analyserNode: AnalyserNode | null = null;
   private isInitialized = false;
   private playback: PlaybackSession;
+  private adaptive = new AdaptiveImmersion(() => this.routeSpatial());
+  private adaptiveGain: GainNode | null = null;
+  private adaptiveReady: Promise<void> | null = null;
+  private spatialOn = true;
+  private adaptiveOn = true;
   private impulseRoom: RoomType | null = null;
 
   constructor() {
@@ -107,8 +113,10 @@ export class SpatialAudioEngine {
     // Crossfade between the binaural path and the original stereo path.
     this.spatialGain = this.ctx.createGain();
     this.stereoGain = this.ctx.createGain();
-    this.spatialGain.gain.value = 1;
-    this.stereoGain.gain.value = 0;
+    this.spatialGain.gain.value = 0;
+    this.stereoGain.gain.value = 1;
+    this.adaptiveGain = this.ctx.createGain();
+    this.adaptiveGain.gain.value = 0;
 
     // 6. Analisador de espectro FFT
     this.analyserNode = this.ctx.createAnalyser();
@@ -128,10 +136,13 @@ export class SpatialAudioEngine {
     this.dryGain.connect(this.stereoGain);
     this.wetGain.connect(this.stereoGain);
     this.stereoGain.connect(this.compressorNode);
+    this.adaptiveGain.connect(this.compressorNode);
     this.compressorNode.connect(this.analyserNode);
     this.analyserNode.connect(this.ctx.destination);
 
     this.isInitialized = true;
+    this.routeSpatial();
+    this.adaptiveReady = this.adaptive.init(this.ctx, lastFilter, this.adaptiveGain).then(() => this.routeSpatial());
   }
 
   public async play() {
@@ -139,7 +150,7 @@ export class SpatialAudioEngine {
     // Start both operations within the user gesture, before awaiting either one.
     const playing = this.audioEl.play();
     const resuming = this.ctx?.resume();
-    try { await Promise.all([playing, resuming]); } catch (error) { this.audioEl.pause(); throw error; }
+    try { await Promise.all([playing, resuming, this.adaptiveReady]); } catch (error) { this.audioEl.pause(); throw error; }
   }
 
   public dispose() {
@@ -150,11 +161,21 @@ export class SpatialAudioEngine {
     if (this.ctx && this.ctx.state !== 'closed') void this.ctx.close().catch(() => undefined);
   }
 
-  public setSpatialEnabled(enabled: boolean) {
-    if (!this.ctx || !this.spatialGain || !this.stereoGain) return;
-    this.spatialGain.gain.setTargetAtTime(enabled ? 1 : 0, this.ctx.currentTime, 0.02);
-    this.stereoGain.gain.setTargetAtTime(enabled ? 0 : 1, this.ctx.currentTime, 0.02);
+  private routeSpatial() {
+    if (!this.ctx || !this.spatialGain || !this.stereoGain || !this.adaptiveGain) return;
+    const adaptive = this.spatialOn && this.adaptiveOn && this.adaptive.analysis.status === 'ready';
+    const manual = this.spatialOn && !this.adaptiveOn;
+    const t = this.ctx.currentTime;
+    this.adaptiveGain.gain.setTargetAtTime(adaptive ? 1 : 0, t, 0.03);
+    this.spatialGain.gain.setTargetAtTime(manual ? 1 : 0, t, 0.03);
+    this.stereoGain.gain.setTargetAtTime(adaptive || manual ? 0 : 1, t, 0.03);
   }
+
+  public setSpatialEnabled(enabled: boolean) { this.spatialOn = enabled; this.routeSpatial(); }
+  public setAdaptiveEnabled(enabled: boolean) { this.adaptiveOn = enabled; this.routeSpatial(); }
+  public setAdaptiveIntensity(intensity: number) { this.adaptive.setAmount(intensity / 100); }
+  public getAdaptiveAnalysis() { return { ...this.adaptive.analysis }; }
+  public resetAdaptiveAnalysis() { this.adaptive.reset(); }
 
   public setNightMode(enabled: boolean) {
     if (!this.ctx || !this.compressorNode) return;
@@ -203,6 +224,7 @@ export class SpatialAudioEngine {
   }
 
   public setReverbMix(wetAmount: number) {
+    this.adaptive.setAmbience(wetAmount);
     if (!this.dryGain || !this.wetGain || !this.ctx) return;
     const clamped = Math.max(0, Math.min(1, wetAmount));
     this.wetGain.gain.setTargetAtTime(clamped * 0.65, this.ctx.currentTime, 0.03);
@@ -216,7 +238,7 @@ export class SpatialAudioEngine {
       return;
     }
 
-    if (this.impulseRoom === type) return;
+    if (this.impulseRoom === type) { this.adaptive.setRoom(this.convolverNode.buffer); return; }
 
     const configs: Record<Exclude<RoomType, 'off'>, { duration: number; decay: number }> = {
       studio: { duration: 0.8, decay: 3.5 },
@@ -238,6 +260,7 @@ export class SpatialAudioEngine {
     }
 
     this.convolverNode.buffer = impulse;
+    this.adaptive.setRoom(impulse);
     this.impulseRoom = type;
   }
 

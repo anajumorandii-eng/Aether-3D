@@ -38,7 +38,7 @@ O app baixa as músicas novas ao abrir e ao voltar para a tela, e remove do apar
 
 ## Modos de escuta e personalização
 
-Em **Som 3D**, escolha um modo pronto ou toque em **Personalizar**. Os ajustes são aplicados durante a reprodução: equalizador de 10 bandas, ambiente e reverberação, espacialização, órbita, posição, elevação e modo noturno.
+Em **Som 3D**, escolha um modo pronto ou toque em **Personalizar**. Os ajustes são aplicados durante a reprodução: equalizador de 10 bandas, ambiente e reverberação, imersão adaptativa, posicionamento manual e modo noturno.
 
 Dê um nome e toque em **Salvar modo** para adicioná-lo a **Meus modos**. Até 12 configurações ficam salvas neste navegador; salvar com o mesmo nome atualiza a configuração existente. Excluir um modo não altera o som em reprodução.
 
@@ -65,10 +65,20 @@ Para atualizar as regras: `npx -y firebase-tools@latest deploy --only database -
 
 ## Imersão DJ e reprodução em segundo plano
 
-O modo **DJ** oferece níveis Suave (25%), Intenso (65%) e Máximo (100%), além do ajuste contínuo de 0 a 100%. A intensidade altera equalização, reverberação e velocidade da órbita. O volume do player não é alterado. Em **Personalizar**, é possível ajustar os efeitos separadamente e salvar a combinação em Meus modos; a intensidade também acompanha a conta Google.
+O modo **DJ** oferece níveis Suave (25%), Intenso (65%) e Máximo (100%), além do ajuste contínuo de 0 a 100%. A intensidade altera equalização e força da adaptação estéreo, sem rotação. O volume do player não é alterado. Em **Personalizar**, é possível ajustar os efeitos separadamente e salvar a combinação em Meus modos; a intensidade também acompanha a conta Google.
 
-O motor configura `navigator.audioSession.type = playback` quando disponível e mantém estado, posição e ações de reprodução na Media Session. Há recuperação de AudioContext suspenso durante reprodução e ao retornar à página; uma pausa feita pelo usuário é respeitada. Os testes automatizados verificam essa configuração e esses eventos, mas não reproduzem o gerenciamento de energia e áudio de um iPhone físico. A continuidade ao bloquear a tela precisa ser validada na versão de iOS/iPadOS utilizada. A órbita atual usa animação do navegador; em segundo plano o som pode permanecer na última posição espacial, mantendo equalização e ambiente.
+O motor configura `navigator.audioSession.type = playback` quando disponível e mantém estado, posição e ações de reprodução na Media Session. Há recuperação de AudioContext suspenso durante reprodução e ao retornar à página; uma pausa feita pelo usuário é respeitada. Os testes automatizados verificam essa configuração e esses eventos, mas não reproduzem o gerenciamento de energia e áudio de um iPhone físico. A continuidade ao bloquear a tela precisa ser validada na versão de iOS/iPadOS utilizada. A adaptação de áudio roda em AudioWorklet, sem depender de animações ou timers da interface. O sistema ainda pode suspender o contexto de áudio em situações específicas.
 
 Referências: [Audio Session API](https://developer.mozilla.org/en-US/docs/Web/API/AudioSession/type), [Media Session](https://developer.mozilla.org/en-US/docs/Web/API/MediaSession) e [histórico de suspensão do Web Audio no WebKit](https://bugs.webkit.org/show_bug.cgi?id=261554).
 
 Para testar o áudio e o DJ, inicie o Vite na porta 5176 e execute `npm run test:audio`. Os testes verificam os parâmetros de áudio reais, pausa, retomada, limpeza de recursos, intensidade manual e salvamento do DJ. Use `AUDIO_TEST_URL` se o servidor estiver em outra porta.
+
+## Imersão adaptativa por áudio
+
+Som 3D e DJ usam um processador estéreo adaptativo em AudioWorklet. Ele mede energia central/lateral, correlação entre canais, graves e transientes para ajustar abertura e profundidade gradualmente. Mixagens já abertas ou com oposição de fase não recebem mais expansão; graves fortes e transientes reduzem o processamento. Reflexões curtas são adicionadas às laterais e o envelope de profundidade controla a reverberação do ambiente escolhido no próprio thread de áudio.
+
+Não há órbita automática. Configurações antigas que giravam a fonte são convertidas para adaptação, preservando o equalizador e o ambiente. O posicionamento HRTF manual continua disponível ao desligar Adaptar à música. A rota adaptativa mantém os dois canais originais e não passa pelo panner mono do posicionamento manual.
+
+A análise é local e acompanha o sinal durante a reprodução; não identifica instrumentos, não separa stems e não reconstrói Atmos ou objetos 360° de um arquivo estéreo. Ao trocar de faixa, são reiniciados os medidores e as reflexões. Se AudioWorklet não estiver disponível, o app informa a limitação e mantém a reprodução estéreo, sem simular adaptação.
+
+`tests/adaptive-dsp.cjs` verifica sinais PCM sintéticos: centro, estéreo estreito/amplo, graves, oposição de fase, bypass e silêncio. `tests/adaptive-browser.cjs` verifica o AudioWorklet real, diferenças entre entradas, fallback e migração de presets antigos. Os ajustes e a intensidade também são incluídos na sincronização da conta.

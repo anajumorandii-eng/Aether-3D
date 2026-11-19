@@ -1,4 +1,4 @@
-import type { ListeningMode } from '../audio/listeningModes';
+import { upgradeListeningMode, type ListeningMode } from '../audio/listeningModes';
 
 const KEY = 'aether_custom_modes_v1';
 export const MAX_CUSTOM_MODES = 12;
@@ -16,13 +16,14 @@ export function validCustomMode(v: unknown): v is ListeningMode {
     between(m.mix, 0, 1) && between(m.speed, 0.2, 2) && between(m.elevation, -1, 1) &&
     between(m.position?.x, -1, 1) && between(m.position?.z, -1, 1) &&
     typeof m.orbit === 'boolean' && typeof m.spatial === 'boolean' && typeof m.night === 'boolean' &&
-    (!m.orbit || m.spatial) && (m.djIntensity === undefined || between(m.djIntensity, 0, 100));
+    (!m.orbit || m.spatial) && (m.djIntensity === undefined || between(m.djIntensity, 0, 100)) &&
+    (m.adaptive === undefined || typeof m.adaptive === 'boolean') && (m.adaptiveIntensity === undefined || between(m.adaptiveIntensity, 0, 100));
 }
 
 export function loadCustomModes(): ListeningMode[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter(validCustomMode).slice(0, MAX_CUSTOM_MODES) : [];
+    return Array.isArray(parsed) ? parsed.filter(validCustomMode).slice(0, MAX_CUSTOM_MODES).map(upgradeListeningMode) : [];
   } catch { return []; }
 }
 
