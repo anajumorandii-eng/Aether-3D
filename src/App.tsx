@@ -3,6 +3,8 @@ import type { ChangeEvent } from 'react';
 import { FolderOpen, Library as LibraryIcon, Orbit, Sliders, Sparkles, X } from 'lucide-react';
 import { EQ_PRESETS, SpatialAudioEngine, type RoomType } from './audio/AudioEngine';
 import { LISTENING_MODES, createDjMode, upgradeListeningMode, type ListeningMode } from './audio/listeningModes';
+import { SpotifyHandoff, type HandoffStatus } from './spotify/SpotifyHandoff';
+import { findTrackMatch } from './spotify/trackMatching';
 import { createDemoTrackUrl } from './audio/demoTrack';
 import { clearCloudUrl, displayName, downloadCloudBlob, getCloudUrl, listCloudAudio, parseSasUrl, setCloudUrl } from './cloud/BlobSync';
 import { CloudPanel, type CloudStatus } from './components/CloudPanel';
@@ -49,21 +51,13 @@ interface LocalFile {
 
 type MobileTab = 'listen' | 'library' | 'eq' | 'room';
 
-function findLocalMatch(files: LocalFile[], name: string, artist: string) {
-  const cleanTrack = normalizeText(name);
-  const cleanFull = normalizeText(`${artist} ${name}`);
-  if (!cleanTrack) return undefined;
-  return files.find((f) => f.key.includes(cleanTrack) || cleanFull.includes(f.key));
-}
-
-// WAV silencioso: "destrava" o player no iOS durante um toque, para tocar depois sem gesto.
-const SILENT_WAV =
-  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+const findLocalMatch = findTrackMatch;
 
 export default function App() {
   const engineRef = useRef<SpatialAudioEngine | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const accountIdentityRef = useRef<string | null>(null);
+  const requestCloudTrackRef = useRef<(name: string) => void>(() => {});
 
   // Fontes
   const [localFiles, setLocalFiles] = useState<LocalFile[]>([]);
@@ -86,6 +80,7 @@ export default function App() {
     }
     setFollowSpotifyState(on);
   }, []);
+  const [handoffStatus, setHandoffStatus] = useState<HandoffStatus>({ phase: 'idle', message: '' });
   const [spotifyNow, setSpotifyNow] = useState<SpotifyNowPlaying | null>(null);
 
   // Reprodução
@@ -158,7 +153,7 @@ export default function App() {
   const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity });
   settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity };
 
-  const pendingSeekRef = useRef<number | null>(null);
+  const pendingSeekRef = useRef<{ position: number; receivedAt: number } | null>(null);
 
   /** Carrega e toca a faixa. Resolve true se a reprodução começou de fato. */
   const loadTrack = useCallback(async (track: PlayableTrack, startAt?: number): Promise<boolean> => {
@@ -177,7 +172,7 @@ export default function App() {
     engine.setPosition(s.pos.x * 3, s.elevation * 2, s.pos.z * 3);
 
     const audio = engine.getAudioElement();
-    pendingSeekRef.current = startAt && startAt > 0 ? startAt : null;
+    pendingSeekRef.current = startAt !== undefined && startAt >= 0 ? { position: startAt, receivedAt: performance.now() } : null;
     audio.src = track.url;
     audio.volume = s.volume;
     setCurrentId(track.id);
@@ -219,7 +214,10 @@ export default function App() {
       setDuration(audio.duration || 0);
       const seek = pendingSeekRef.current;
       pendingSeekRef.current = null;
-      if (seek !== null && seek < (audio.duration || Infinity)) audio.currentTime = seek;
+      if (seek !== null) {
+        const position = seek.position + (performance.now() - seek.receivedAt) / 1000;
+        if (position < (audio.duration || Infinity)) audio.currentTime = position;
+      }
     };
     const onEnded = () => stepRef.current(1);
     const onPlay = () => setIsPlaying(true);
@@ -243,6 +241,10 @@ export default function App() {
     const engine = engineRef.current;
     if (!engine) return;
     const audio = engine.getAudioElement();
+    if (audio.paused && followSpotify && spotifyToken && (handoffStatus.phase === 'blocked' || handoffStatus.phase === 'error')) {
+      void handoff.retry(spotifyToken);
+      return;
+    }
     if (audio.paused) {
       if (!audio.src || !currentTrack) {
         const first = tracks.find((t) => t.url);
@@ -468,93 +470,75 @@ export default function App() {
   // ---------- Seguir o Spotify ----------
   const localFilesRef = useRef(localFiles);
   localFilesRef.current = localFiles;
-  const followStateRef = useRef<{ handledId: string | null; notifiedId: string | null; warnedPause: boolean }>({ handledId: null, notifiedId: null, warnedPause: false });
+  const handoff = useMemo(() => new SpotifyHandoff({
+    findFile: track => findLocalMatch(localFilesRef.current, track.name, track.artist),
+    isPlaying: file => {
+      const audio = engineRef.current?.getAudioElement();
+      return Boolean(audio && audio.src === file.url && !audio.paused && !audio.ended);
+    },
+    start: async (track, file, position) => {
+      const queueId = tracksRef.current.find(t => t.url === file.url)?.id ?? file.url;
+      setFollowMeta({ id: queueId, name: track.name, artist: track.artist, albumArt: track.albumArt });
+      const started = await loadTrack({ id: queueId, name: track.name, artist: track.artist, albumArt: track.albumArt, url: file.url, source: 'spotify-matched' }, position);
+      const audio = engineRef.current?.getAudioElement();
+      if (started && audio && Number.isFinite(audio.duration) && track.durationMs > 0 &&
+          (position >= audio.duration || Math.abs(audio.duration - track.durationMs / 1000) > Math.max(10, track.durationMs / 1000 * 0.05))) {
+        if (audio.src === file.url) audio.pause();
+        return { started: false, mismatch: true };
+      }
+      return { started };
+    },
+    stop: file => { const audio = engineRef.current?.getAudioElement(); if (audio?.src === file.url) audio.pause(); },
+    readSpotify: fetchCurrentlyPlaying,
+    pauseSpotify: pauseSpotifyPlayback,
+    requestFile: track => requestCloudTrackRef.current(track.name),
+    report: setHandoffStatus,
+  }), [loadTrack]);
 
   const toggleFollow = (on: boolean) => {
     if (on && !hasScopes(FOLLOW_SCOPES)) {
-      notify('Autorize o Aether 3D a ver o que você está ouvindo. Abrindo o Spotify…');
-      localStorage.setItem('aether_follow_spotify', '1'); // liga sozinho ao voltar do login
-      window.setTimeout(loginWithSpotify, 900);
+      notify('Autorize o Aether a acompanhar a reprodução do Spotify.');
+      localStorage.setItem('aether_follow_spotify', '1');
+      loginWithSpotify();
       return;
     }
-    if (on) {
-      // Destrava o áudio no iOS enquanto há um toque do usuário.
-      const engine = engineRef.current;
-      if (engine) {
-        engine.init();
-        const audio = engine.getAudioElement();
-        if (!audio.src) {
-          audio.src = SILENT_WAV;
-          audio.play().then(() => audio.pause()).catch(() => undefined);
-        }
-      }
-      followStateRef.current = { handledId: null, notifiedId: null, warnedPause: false };
-    } else {
-      setSpotifyNow(null);
-    }
+    if (!on) setSpotifyNow(null);
     setFollowSpotify(on);
   };
 
-  const handleSpotifyNow = useCallback(
-    async (now: SpotifyNowPlaying | null, token: string) => {
-      setSpotifyNow(now);
-      const state = followStateRef.current;
-      if (!now || !now.isPlaying || now.id === state.handledId) return;
-
-      const match = findLocalMatch(localFilesRef.current, now.name, now.artist);
-      if (!match) {
-        if (state.notifiedId !== now.id) {
-          state.notifiedId = now.id;
-          notifyRef.current(`No Spotify: “${now.name}”. Importe o arquivo para ouvir em 3D.`);
-        }
-        return;
-      }
-      state.handledId = now.id;
-      const startAt = now.progressMs / 1000 + 0.6; // compensa o atraso da troca
-      // Usa o ID da faixa já na fila (ex.: a mesma música na playlist selecionada) para o player achá-la.
-      const queueId = tracksRef.current.find((t) => t.url === match.url)?.id ?? match.url;
-      setFollowMeta({ id: queueId, name: now.name, artist: now.artist, albumArt: now.albumArt });
-      const started = await loadTrack(
-        { id: queueId, name: now.name, artist: now.artist, albumArt: now.albumArt, url: match.url, source: 'spotify-matched' },
-        startAt,
-      );
-      // Só pausa o Spotify se o 3D realmente começou a tocar; senão os dois ficariam mudos.
-      if (!started) return;
-      const paused = await pauseSpotifyPlayback(token);
-      if (!paused && !state.warnedPause) {
-        state.warnedPause = true;
-        notifyRef.current('Não consegui pausar o Spotify (requer Premium). Pause-o para ouvir só em 3D.');
-      }
-    },
-    [loadTrack],
-  );
+  const resumeHandoff = () => { if (spotifyToken) void handoff.retry(spotifyToken); };
 
   useEffect(() => {
-    if (!followSpotify || !spotifyToken) return;
+    handoff.reset();
+    if (!followSpotify || !spotifyToken) {
+      handoff.cancel(); setHandoffStatus({ phase: 'idle', message: '' });
+      return;
+    }
     let cancelled = false;
+    let busy = false;
     const poll = async () => {
+      if (busy || cancelled) return;
+      busy = true;
       try {
         const now = await fetchCurrentlyPlaying(spotifyToken);
-        if (!cancelled) await handleSpotifyNow(now, spotifyToken);
-      } catch (err) {
-        if (cancelled) return;
-        // Falha passageira (rede): tenta de novo no próximo ciclo. Sessão perdida: desliga.
-        if (!isSpotifySessionSaved()) {
-          notifyRef.current(err instanceof Error ? err.message : 'Falha ao ler o Spotify.');
-          setFollowSpotify(false);
-          setSpotifyToken(null);
+        if (!cancelled) { setSpotifyNow(now); await handoff.handle(now, spotifyToken); }
+      } catch (error) {
+        if (!cancelled && !isSpotifySessionSaved()) {
+          notifyRef.current(error instanceof Error ? error.message : 'Falha ao ler o Spotify.');
+          setFollowSpotify(false); setSpotifyToken(null);
         }
-      }
+      } finally { busy = false; }
     };
-    poll();
-    const id = window.setInterval(poll, 4000);
+    const onVisible = () => { if (document.visibilityState === 'visible') void poll(); };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 4000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onVisible);
     return () => {
-      cancelled = true;
-      window.clearInterval(id);
+      cancelled = true; handoff.cancel(); window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('pageshow', onVisible);
     };
-  }, [followSpotify, spotifyToken, handleSpotifyNow]);
-
-  const spotifyNowMatched = spotifyNow ? Boolean(findLocalMatch(localFiles, spotifyNow.name, spotifyNow.artist)) : false;
+  }, [followSpotify, spotifyToken, handoff, setFollowSpotify]);
 
   // Restaura a biblioteca salva no aparelho ao abrir o app.
   useEffect(() => {
@@ -752,6 +736,13 @@ export default function App() {
     notify('Nuvem desconectada. As músicas já baixadas continuam no aparelho.');
   };
 
+  requestCloudTrackRef.current = name => {
+    if (!cloudUrl) return;
+    const wanted = normalizeText(name);
+    wantedRef.current = [wanted, ...wantedRef.current.filter(item => item !== wanted)];
+    void syncCloud(cloudUrl);
+  };
+
   const playDemo = async () => {
     let url = demoUrl;
     if (!url) {
@@ -824,7 +815,8 @@ export default function App() {
       following={followSpotify}
       onFollow={toggleFollow}
       spotifyNow={spotifyNow}
-      spotifyNowMatched={spotifyNowMatched}
+      handoffStatus={handoffStatus}
+      onResumeHandoff={resumeHandoff}
       onLogout={disconnectSpotify}
       onImport={() => fileInputRef.current?.click()}
       onDemo={playDemo}

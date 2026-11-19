@@ -30,9 +30,9 @@ export function createDjMode(value: number): ListeningMode {
   const intensity = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 65;
   const strength = intensity / 100;
   return {
-    ...base, id: 'dj', name: 'DJ', djIntensity: intensity,
-    description: 'Impacto e profundidade estéreo adaptados ao áudio, sem rotação.',
-    eq: { name: `DJ · ${intensity}%`, gains: [5,4,2,-1,-1,0,1,2,2,1].map(gain => Math.round(gain * strength * 10) / 10) },
+    ...base, id: 'dj', name: 'DJ 3D', djIntensity: intensity,
+    description: 'Impacto DJ com abertura e profundidade adaptadas à faixa, preservando o centro da mixagem.',
+    eq: { name: `DJ 3D · ${intensity}%`, gains: [5,4,2,-1,-1,0,1,2,2,1].map(gain => Math.round(gain * strength * 10) / 10) },
     room: 'hall', mix: Number((0.4 * strength).toFixed(3)),
     spatial: true, adaptive: true, adaptiveIntensity: intensity, orbit: false,
     position: { x: 0, z: -0.5 },

@@ -1,4 +1,5 @@
 import { AudioLines, FolderOpen, HardDrive, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import type { HandoffStatus } from '../spotify/SpotifyHandoff';
 import type { ReactNode } from 'react';
 import type { SpotifyNowPlaying, SpotifyPlaylist } from '../spotify/SpotifySync';
 import { PanelHeader, Toggle } from './ui';
@@ -33,7 +34,8 @@ interface Props {
   following: boolean;
   onFollow: (on: boolean) => void;
   spotifyNow: SpotifyNowPlaying | null;
-  spotifyNowMatched: boolean;
+  handoffStatus: HandoffStatus;
+  onResumeHandoff: () => void;
   onLogout: () => void;
   onImport: () => void;
   onDemo: () => void;
@@ -95,7 +97,7 @@ export function Library(p: Props) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-ink">Seguir o Spotify</p>
-                <p className="text-[11px] text-ink-muted leading-snug">Toca em 3D o que você ouvir no Spotify</p>
+                <p className="text-[11px] text-ink-muted leading-snug">Assume a faixa usando o arquivo da sua biblioteca</p>
               </div>
               <Toggle checked={p.following} onChange={p.onFollow} label="Seguir o Spotify" />
             </div>
@@ -117,10 +119,10 @@ export function Library(p: Props) {
                     </div>
                     <span
                       className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md shrink-0 ${
-                        p.spotifyNowMatched ? 'text-ok bg-ok/10' : 'text-ink-faint bg-raised'
+                        p.handoffStatus.phase === 'active' ? 'text-ok bg-ok/10' : 'text-ink-faint bg-raised'
                       }`}
                     >
-                      {p.spotifyNowMatched ? 'Em 3D' : 'Sem arquivo'}
+                      {p.handoffStatus.phase === 'active' ? 'No Aether' : p.handoffStatus.phase === 'starting' ? 'Transferindo…' : p.handoffStatus.phase === 'missing' ? 'Sem arquivo' : 'Aguardando'}
                     </span>
                   </>
                 ) : (
@@ -133,6 +135,12 @@ export function Library(p: Props) {
             )}
           </div>
         )}
+
+        {p.following && <div className="mt-3 border-t border-line pt-3">
+          <p role="status" className="text-xs text-ink-muted leading-relaxed">{p.handoffStatus.message}</p>
+          {(p.handoffStatus.phase === 'blocked' || p.handoffStatus.phase === 'error') && <button onClick={p.onResumeHandoff} className="mt-2 w-full min-h-11 rounded-md border border-line-strong text-sm font-medium text-accent">Continuar no Aether</button>}
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">Ative no aparelho em que deseja ouvir. Usa seus arquivos locais ou da nuvem e solicita a pausa do Spotify depois que o áudio começa no Aether.</p>
+        </div>}
 
         {p.connected && p.playlists.length > 0 && (
           <div className="mt-4">

@@ -65,7 +65,7 @@ Para atualizar as regras: `npx -y firebase-tools@latest deploy --only database -
 
 ## Imersão DJ e reprodução em segundo plano
 
-O modo **DJ** oferece níveis Suave (25%), Intenso (65%) e Máximo (100%), além do ajuste contínuo de 0 a 100%. A intensidade altera equalização e força da adaptação estéreo, sem rotação. O volume do player não é alterado. Em **Personalizar**, é possível ajustar os efeitos separadamente e salvar a combinação em Meus modos; a intensidade também acompanha a conta Google.
+O modo **DJ 3D** reúne o impacto dos efeitos DJ e a imersão estéreo adaptativa, e oferece níveis Suave (25%), Intenso (65%) e Máximo (100%), além do ajuste contínuo de 0 a 100%. A intensidade altera equalização e força da adaptação estéreo, sem rotação. O volume do player não é alterado. Em **Personalizar**, é possível ajustar os efeitos separadamente e salvar a combinação em Meus modos; a intensidade também acompanha a conta Google.
 
 O motor configura `navigator.audioSession.type = playback` quando disponível e mantém estado, posição e ações de reprodução na Media Session. Há recuperação de AudioContext suspenso durante reprodução e ao retornar à página; uma pausa feita pelo usuário é respeitada. Os testes automatizados verificam essa configuração e esses eventos, mas não reproduzem o gerenciamento de energia e áudio de um iPhone físico. A continuidade ao bloquear a tela precisa ser validada na versão de iOS/iPadOS utilizada. A adaptação de áudio roda em AudioWorklet, sem depender de animações ou timers da interface. O sistema ainda pode suspender o contexto de áudio em situações específicas.
 
@@ -75,10 +75,22 @@ Para testar o áudio e o DJ, inicie o Vite na porta 5176 e execute `npm run test
 
 ## Imersão adaptativa por áudio
 
-Som 3D e DJ usam um processador estéreo adaptativo em AudioWorklet. Ele mede energia central/lateral, correlação entre canais, graves e transientes para ajustar abertura e profundidade gradualmente. Mixagens já abertas ou com oposição de fase não recebem mais expansão; graves fortes e transientes reduzem o processamento. Reflexões curtas são adicionadas às laterais e o envelope de profundidade controla a reverberação do ambiente escolhido no próprio thread de áudio.
+Som 3D e DJ 3D usam um processador estéreo adaptativo em AudioWorklet. Ele mede energia central/lateral, correlação entre canais, graves e transientes para ajustar abertura e profundidade gradualmente. Mixagens já abertas ou com oposição de fase não recebem mais expansão; graves fortes e transientes reduzem o processamento. Reflexões curtas são adicionadas às laterais e o envelope de profundidade controla a reverberação do ambiente escolhido no próprio thread de áudio.
 
 Não há órbita automática. Configurações antigas que giravam a fonte são convertidas para adaptação, preservando o equalizador e o ambiente. O posicionamento HRTF manual continua disponível ao desligar Adaptar à música. A rota adaptativa mantém os dois canais originais e não passa pelo panner mono do posicionamento manual.
 
 A análise é local e acompanha o sinal durante a reprodução; não identifica instrumentos, não separa stems e não reconstrói Atmos ou objetos 360° de um arquivo estéreo. Ao trocar de faixa, são reiniciados os medidores e as reflexões. Se AudioWorklet não estiver disponível, o app informa a limitação e mantém a reprodução estéreo, sem simular adaptação.
 
 `tests/adaptive-dsp.cjs` verifica sinais PCM sintéticos: centro, estéreo estreito/amplo, graves, oposição de fase, bypass e silêncio. `tests/adaptive-browser.cjs` verifica o AudioWorklet real, diferenças entre entradas, fallback e migração de presets antigos. Os ajustes e a intensidade também são incluídos na sincronização da conta.
+
+## Passagem automática do Spotify para o Aether
+
+Em Biblioteca, conecte o Spotify e ative **Seguir o Spotify** no aparelho onde deseja ouvir. O Aether acompanha a seleção e a posição e procura um arquivo compatível na biblioteca local. Se a biblioteca Azure estiver conectada, solicita uma sincronização e prioriza a faixa procurada.
+
+O áudio continua vindo dos seus arquivos; a API do Spotify não fornece a música completa para o processamento. O Aether inicia o arquivo na posição recebida, verifica se a música do Spotify mudou durante a troca e só solicita a pausa remota após o início local. Se o sistema já pausou o Spotify ao trocar a saída de áudio, não há outro pedido de pausa. O modo e os efeitos escolhidos, incluindo DJ 3D, são mantidos.
+
+O navegador pode exigir um toque em **Continuar no Aether** para iniciar o áudio. Isso não exige pausar o Spotify manualmente. A pausa remota pela API pode exigir Premium. Se o Spotify recusar e continuar tocando, a tentativa local é interrompida e a interface informa que a transferência não foi concluída. Uma falha de rede também não é apresentada como sucesso.
+
+A busca usa títulos e artistas dos nomes dos arquivos; nomes ambíguos ou versões diferentes não são escolhidos automaticamente. A duração local também é conferida. Essa associação não usa reconhecimento acústico. Atualizações dependem de o navegador poder executar o app; ao voltar ao Aether, a consulta é imediata. A função deve ser ativada no aparelho destinado à reprodução, para evitar dois aparelhos tentando assumir a mesma sessão.
+
+`npm run test:spotify` verifica ordem de início/pausa, posição, mesma faixa retomada, arquivo ausente, bloqueio do navegador, cancelamento, troca de faixa e recusa do Spotify. Os testes de navegador usam respostas simuladas do Spotify e áudio WAV real; não dependem de credenciais ou de controlar uma conta Spotify real.
