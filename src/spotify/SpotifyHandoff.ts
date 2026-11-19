@@ -38,6 +38,11 @@ export class SpotifyHandoff {
   async handle(track: SpotifyNowPlaying | null, token: string, force = false): Promise<void> {
     if (!this.enabled) return;
     if (track) { this.lastTrack = track; this.lastSeen = this.clock(); if (!track.isPlaying && track.id === this.handledId) this.observedPaused = true; }
+    // Importing a matching local track may already have transferred OS audio focus.
+    if (track && !track.isPlaying && !force && !this.handledId && !this.blockedId) {
+      const file = this.dependencies.findFile(track);
+      if (file && this.dependencies.isPlaying(file)) return this.handle(track, token, true);
+    }
     if (!track || (!track.isPlaying && !force)) {
       if (track && this.blockedId === track.id) {
         const file = this.dependencies.findFile(track);

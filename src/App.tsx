@@ -600,7 +600,7 @@ export default function App() {
         ? `${n} ${n === 1 ? 'música salva' : 'músicas salvas'} no aparelho. Não precisa importar de novo.`
         : `${n} ${n === 1 ? 'arquivo importado' : 'arquivos importados'}, mas sem espaço para salvar no aparelho.`,
     );
-    if (!currentId) {
+    if (!currentId && !followSpotify) {
       const first = added[0];
       loadTrack({ id: first.url, name: first.name, artist: 'Arquivo local', url: first.url, source: 'local' });
     }
