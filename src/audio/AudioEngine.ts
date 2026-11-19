@@ -1,3 +1,5 @@
+import { PlaybackSession } from './PlaybackSession';
+
 export interface EQPreset {
   name: string;
   gains: number[]; // 10 bandas: 32, 64, 125, 250, 500, 1k, 2k, 4k, 8k, 16k
@@ -29,18 +31,22 @@ export class SpatialAudioEngine {
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
   private isInitialized = false;
+  private playback: PlaybackSession;
+  private impulseRoom: RoomType | null = null;
 
   constructor() {
     this.audioEl = new Audio();
     this.audioEl.crossOrigin = 'anonymous';
     this.audioEl.preload = 'auto';
     this.audioEl.setAttribute('playsinline', 'true');
+    this.playback = new PlaybackSession(this.audioEl, () => this.ctx);
   }
 
   public init() {
+    this.playback.configure();
     if (this.isInitialized) {
       if (this.ctx?.state === 'suspended') {
-        this.ctx.resume();
+        void this.ctx.resume().catch(() => undefined);
       }
       return;
     }
@@ -48,7 +54,8 @@ export class SpatialAudioEngine {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    this.ctx = new AudioCtx();
+    this.ctx = new AudioCtx({ latencyHint: 'playback' });
+    this.playback.watchContext(this.ctx);
 
     // 1. Fonte de áudio
     this.sourceNode = this.ctx.createMediaElementSource(this.audioEl);
@@ -127,6 +134,22 @@ export class SpatialAudioEngine {
     this.isInitialized = true;
   }
 
+  public async play() {
+    this.init();
+    // Start both operations within the user gesture, before awaiting either one.
+    const playing = this.audioEl.play();
+    const resuming = this.ctx?.resume();
+    try { await Promise.all([playing, resuming]); } catch (error) { this.audioEl.pause(); throw error; }
+  }
+
+  public dispose() {
+    this.audioEl.pause();
+    this.playback.dispose();
+    this.audioEl.removeAttribute('src');
+    this.audioEl.load();
+    if (this.ctx && this.ctx.state !== 'closed') void this.ctx.close().catch(() => undefined);
+  }
+
   public setSpatialEnabled(enabled: boolean) {
     if (!this.ctx || !this.spatialGain || !this.stereoGain) return;
     this.spatialGain.gain.setTargetAtTime(enabled ? 1 : 0, this.ctx.currentTime, 0.02);
@@ -193,6 +216,8 @@ export class SpatialAudioEngine {
       return;
     }
 
+    if (this.impulseRoom === type) return;
+
     const configs: Record<Exclude<RoomType, 'off'>, { duration: number; decay: number }> = {
       studio: { duration: 0.8, decay: 3.5 },
       hall: { duration: 2.1, decay: 2.4 },
@@ -213,6 +238,7 @@ export class SpatialAudioEngine {
     }
 
     this.convolverNode.buffer = impulse;
+    this.impulseRoom = type;
   }
 
   public updateMediaSession(
@@ -222,23 +248,6 @@ export class SpatialAudioEngine {
     onNext: () => void,
     onPrev: () => void,
   ) {
-    if (!('mediaSession' in navigator)) return;
-
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title,
-      artist,
-      album: 'Aether 3D Spatial Audio',
-      artwork: artwork ? [{ src: artwork, sizes: '512x512' }] : undefined,
-    });
-
-    navigator.mediaSession.setActionHandler('play', () => {
-      this.init();
-      this.audioEl.play();
-    });
-    navigator.mediaSession.setActionHandler('pause', () => {
-      this.audioEl.pause();
-    });
-    navigator.mediaSession.setActionHandler('nexttrack', onNext);
-    navigator.mediaSession.setActionHandler('previoustrack', onPrev);
+    this.playback.setMetadata(title, artist, artwork, () => { void this.play().catch(() => this.audioEl.pause()); }, onNext, onPrev);
   }
 }

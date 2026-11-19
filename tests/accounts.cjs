@@ -9,6 +9,7 @@ await login(c,`sync-${run}@example.test`);await c.getByRole('button',{name:'Cont
 console.log('Two sessions signed in');
 const modes=p=>p.getByRole('group',{name:'Modos de escuta'});
 await modes(a).getByRole('button',{name:'Graves',exact:true}).click();await c.waitForFunction(()=>document.querySelector('[aria-label="Modos de escuta"] button[aria-pressed="true"]')?.textContent.trim()==='Graves');console.log('Sound mode synced');
+await modes(a).getByRole('button',{name:'DJ',exact:true}).click();await a.getByRole('slider',{name:'Intensidade DJ'}).fill('43');await c.waitForFunction(()=>document.querySelector('[aria-label="Intensidade DJ"]')?.value==='43');console.log('DJ intensity synced between devices');
 await a.getByRole('button',{name:'Personalizar',exact:true}).click();await a.getByLabel('Salvar como meu modo').fill('Compartilhado');await a.getByRole('button',{name:'Salvar modo',exact:true}).click();await c.getByRole('button',{name:'Compartilhado',exact:true}).waitFor();console.log('Custom mode synced');
 await c.reload();await c.getByRole('button',{name:'Compartilhado',exact:true}).waitFor();console.log('Reload restored account');
 await c.getByRole('button',{name:'Conta Aether'}).click();await c.getByRole('button',{name:'Sair da conta',exact:true}).click();await c.getByRole('button',{name:'Entrar com Google'}).waitFor();await c.getByRole('button',{name:'Fechar',exact:true}).click();assert.equal(await c.getByRole('button',{name:'Compartilhado',exact:true}).count(),0);console.log('Signout restored guest settings');

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { FolderOpen, Library as LibraryIcon, Orbit, Sliders, Sparkles, X } from 'lucide-react';
 import { EQ_PRESETS, SpatialAudioEngine, type RoomType } from './audio/AudioEngine';
-import { LISTENING_MODES, type ListeningMode } from './audio/listeningModes';
+import { LISTENING_MODES, createDjMode, type ListeningMode } from './audio/listeningModes';
 import { createDemoTrackUrl } from './audio/demoTrack';
 import { clearCloudUrl, displayName, downloadCloudBlob, getCloudUrl, listCloudAudio, parseSasUrl, setCloudUrl } from './cloud/BlobSync';
 import { CloudPanel, type CloudStatus } from './components/CloudPanel';
@@ -30,6 +30,7 @@ import { RoomPanel } from './components/RoomPanel';
 import { Library, type PlayableTrack } from './components/Library';
 import { useAccount } from './account/useAccount';
 import { parseSound, parseModes, parseSpotify, type AccountSettings, type SettingsPatch } from './account/settings';
+import { DjLevels } from './components/DjLevels';
 import { AccountPanel } from './components/AccountPanel';
 import { CustomizeSound } from './components/CustomizeSound';
 import { loadCustomModes, saveCustomModes, MAX_CUSTOM_MODES } from './storage/listeningModes';
@@ -100,6 +101,7 @@ export default function App() {
   const [orbitSpeed, setOrbitSpeed] = useState(0.35);
 
   // Som
+  const [djIntensity, setDjIntensity] = useState(65);
   const [preferredModeId, setPreferredModeId] = useState<string>('immersive');
   const [spatialEnabled, setSpatialEnabled] = useState(true);
   const [nightMode, setNightMode] = useState(false);
@@ -175,7 +177,7 @@ export default function App() {
     setCurrentId(track.id);
     engine.updateMediaSession(track.name, track.artist, track.albumArt, () => stepRef.current(1), () => stepRef.current(-1));
     try {
-      await audio.play();
+      await engine.play();
       return true;
     } catch {
       notifyRef.current(`“${track.name}” está pronta. Toque em play para ouvir em 3D.`);
@@ -222,7 +224,7 @@ export default function App() {
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     return () => {
-      audio.pause();
+      engine.dispose();
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('loadedmetadata', onMeta);
       audio.removeEventListener('ended', onEnded);
@@ -241,7 +243,7 @@ export default function App() {
         if (first) loadTrack(first);
       } else {
         engine.init();
-        audio.play().catch(() => undefined);
+        void engine.play().catch(() => notify('Toque em play para retomar o áudio.'));
       }
     } else {
       audio.pause();
@@ -326,7 +328,7 @@ export default function App() {
     }
   };
 
-  const modesByPreference = [...LISTENING_MODES, ...customModes].sort((a, b) => Number(b.id === preferredModeId) - Number(a.id === preferredModeId));
+  const modesByPreference = [...LISTENING_MODES.map(mode => mode.id === 'dj' ? createDjMode(djIntensity) : mode), ...customModes].sort((a, b) => Number(b.id === preferredModeId) - Number(a.id === preferredModeId));
   const activeMode = modesByPreference.find((mode) =>
     mode.eq.gains.every((gain, i) => gain === eqGains[i]) &&
     mode.room === roomType && mode.mix === reverbMix && mode.spatial === spatialEnabled && mode.night === nightMode &&
@@ -336,7 +338,8 @@ export default function App() {
       : mode.position.x === pos.x && mode.position.z === pos.z),
   );
 
-  const applyListeningMode = (mode: ListeningMode) => {
+  const applyListeningMode = (mode: ListeningMode, announce = true) => {
+    if (mode.djIntensity !== undefined) setDjIntensity(mode.djIntensity);
     setPreferredModeId(mode.id);
     selectPreset(mode.eq.name, [...mode.eq.gains]);
     changeRoom(mode.room);
@@ -349,7 +352,7 @@ export default function App() {
     setNightMode(mode.night);
     engineRef.current?.setSpatialEnabled(mode.spatial);
     engineRef.current?.setNightMode(mode.night);
-    notify(`${mode.name} aplicado.`);
+    if (announce) notify(`${mode.name} aplicado.`);
   };
 
   const saveCurrentMode = (name: string) => {
@@ -364,6 +367,7 @@ export default function App() {
       description: 'Sua configuração de áudio.', eq: { name: activePreset, gains: [...eqGains] },
       room: roomType, mix: reverbMix, orbit: autoOrbit, speed: orbitSpeed,
       position: { ...pos }, elevation, spatial: spatialEnabled, night: nightMode,
+      ...((preferredModeId === 'dj' || activeMode?.djIntensity !== undefined) ? { djIntensity } : {}),
     };
     const next = existing ? customModes.map(m => m.id === mode.id ? mode : m) : [...customModes, mode];
     try { saveCustomModes(next, accountIdentityRef.current ?? undefined); } catch { notify('Não foi possível salvar neste navegador. Seus ajustes continuam ativos.'); return false; }
@@ -775,7 +779,7 @@ export default function App() {
   // Exclude volume, playback, OAuth credentials and the animated orbit angle.
   const orbitRadius = Math.round(Math.hypot(pos.x, pos.z) * 1000) / 1000;
   const accountSettings: AccountSettings = {
-    sound: JSON.stringify({ modeId: preferredModeId, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
+    sound: JSON.stringify({ modeId: preferredModeId, djIntensity, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
       spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed,
       position: autoOrbit ? { x: 0, z: -orbitRadius } : pos, elevation }),
     customModes: JSON.stringify(customModes), spotify: JSON.stringify({ playlistId: selectedPlaylist, refreshRevision: spotifyRefreshRevision }), cloudUrl: cloudUrl ?? '',
@@ -784,6 +788,7 @@ export default function App() {
     if (patch.sound !== undefined) {
       const sound = parseSound(patch.sound);
       setPreferredModeId(sound.modeId ?? '');
+      if (sound.djIntensity !== undefined) setDjIntensity(sound.djIntensity);
       setEqGains(sound.gains); setActivePreset(sound.preset); setRoomType(sound.room); setReverbMix(sound.mix);
       setSpatialEnabled(sound.spatial); setNightMode(sound.night); setAutoOrbit(sound.orbit);
       setOrbitSpeed(sound.speed); setPos(sound.position); setElevation(sound.elevation);
@@ -926,17 +931,18 @@ export default function App() {
             </div>
             <div className="grid grid-cols-3 gap-1 mode-selector" role="group" aria-label="Modos de escuta">
               {LISTENING_MODES.map((mode) => (
-                <button key={mode.id} onClick={() => applyListeningMode(mode)} aria-pressed={activeMode?.id === mode.id}
+                <button key={mode.id} onClick={() => applyListeningMode(mode.id === 'dj' ? createDjMode(djIntensity) : mode)} aria-pressed={activeMode?.id === mode.id}
                   className={`min-h-11 text-xs font-medium transition-colors ${activeMode?.id === mode.id ? 'mode-selected' : 'text-ink-muted hover:text-ink'}`}>
                   {mode.name}
                 </button>
               ))}
             </div>
+            {(preferredModeId === 'dj' || activeMode?.djIntensity !== undefined) && <DjLevels intensity={djIntensity} onIntensity={value => applyListeningMode(createDjMode(value), false)} />}
             <div className="flex justify-end mt-2"><button onClick={() => setCustomizing(true)} className="text-xs font-medium text-accent underline underline-offset-4">Personalizar</button></div>
             {customModes.length > 0 && <div className="mt-3 border-t border-line-strong pt-3">
               <h3 className="text-xs text-ink-muted mb-2">Meus modos</h3>
               <ul className="space-y-1">{customModes.map(mode => <li key={mode.id} className="flex items-center gap-2">
-                <button onClick={() => applyListeningMode(mode)} aria-pressed={activeMode?.id === mode.id} className={`flex-1 min-w-0 text-left text-sm px-3 rounded-md truncate ${activeMode?.id === mode.id ? 'bg-raised text-accent' : 'text-ink-muted'}`}>{mode.name}</button>
+                <button onClick={() => applyListeningMode(mode.id === 'dj' ? createDjMode(djIntensity) : mode)} aria-pressed={activeMode?.id === mode.id} className={`flex-1 min-w-0 text-left text-sm px-3 rounded-md truncate ${activeMode?.id === mode.id ? 'bg-raised text-accent' : 'text-ink-muted'}`}>{mode.name}</button>
                 <button onClick={() => removeCustomMode(mode.id)} aria-label={`Excluir modo ${mode.name}`} className="text-xs text-ink-muted px-2">Excluir</button>
               </li>)}</ul>
             </div>}

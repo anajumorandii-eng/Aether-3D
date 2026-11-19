@@ -62,3 +62,13 @@ Ao trocar o domínio público, inclua-o em Firebase Authentication → Configura
 Os testes usam identidades Google falsas aceitas apenas pelo emulador. Verificam sincronização em duas sessões, restauração, isolamento entre usuários, regras de acesso reenvio de edições offline após fechar a aba, e propagação de sincronização do Spotify usando tokens locais separados. Para usar um Chromium já instalado, defina `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
 
 Para atualizar as regras: `npx -y firebase-tools@latest deploy --only database --project aether-3d-sync-42043f7`. A publicação do frontend continua no Azure, pelo workflow do GitHub.
+
+## Imersão DJ e reprodução em segundo plano
+
+O modo **DJ** oferece níveis Suave (25%), Intenso (65%) e Máximo (100%), além do ajuste contínuo de 0 a 100%. A intensidade altera equalização, reverberação e velocidade da órbita. O volume do player não é alterado. Em **Personalizar**, é possível ajustar os efeitos separadamente e salvar a combinação em Meus modos; a intensidade também acompanha a conta Google.
+
+O motor configura `navigator.audioSession.type = playback` quando disponível e mantém estado, posição e ações de reprodução na Media Session. Há recuperação de AudioContext suspenso durante reprodução e ao retornar à página; uma pausa feita pelo usuário é respeitada. Os testes automatizados verificam essa configuração e esses eventos, mas não reproduzem o gerenciamento de energia e áudio de um iPhone físico. A continuidade ao bloquear a tela precisa ser validada na versão de iOS/iPadOS utilizada. A órbita atual usa animação do navegador; em segundo plano o som pode permanecer na última posição espacial, mantendo equalização e ambiente.
+
+Referências: [Audio Session API](https://developer.mozilla.org/en-US/docs/Web/API/AudioSession/type), [Media Session](https://developer.mozilla.org/en-US/docs/Web/API/MediaSession) e [histórico de suspensão do Web Audio no WebKit](https://bugs.webkit.org/show_bug.cgi?id=261554).
+
+Para testar o áudio e o DJ, inicie o Vite na porta 5176 e execute `npm run test:audio`. Os testes verificam os parâmetros de áudio reais, pausa, retomada, limpeza de recursos, intensidade manual e salvamento do DJ. Use `AUDIO_TEST_URL` se o servidor estiver em outra porta.

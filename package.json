@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:accounts": "node tests/accounts.cjs && node tests/account-security.cjs && node tests/spotify-account-sync.cjs"
+    "test:accounts": "node tests/accounts.cjs && node tests/account-security.cjs && node tests/spotify-account-sync.cjs",
+    "test:audio": "node tests/audio-playback.cjs && node tests/dj-levels.cjs"
   },
   "dependencies": {
     "firebase": "^13.4.0",
