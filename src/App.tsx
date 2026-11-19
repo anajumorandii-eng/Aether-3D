@@ -28,6 +28,9 @@ import { SpatialStage, type StagePos } from './components/SpatialStage';
 import { Equalizer } from './components/Equalizer';
 import { RoomPanel } from './components/RoomPanel';
 import { Library, type PlayableTrack } from './components/Library';
+import { useAccount } from './account/useAccount';
+import { parseSound, parseModes, parseSpotify, type AccountSettings, type SettingsPatch } from './account/settings';
+import { AccountPanel } from './components/AccountPanel';
 import { CustomizeSound } from './components/CustomizeSound';
 import { loadCustomModes, saveCustomModes, MAX_CUSTOM_MODES } from './storage/listeningModes';
 import { PlayerBar } from './components/PlayerBar';
@@ -58,6 +61,7 @@ const SILENT_WAV =
 export default function App() {
   const engineRef = useRef<SpatialAudioEngine | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const accountIdentityRef = useRef<string | null>(null);
 
   // Fontes
   const [localFiles, setLocalFiles] = useState<LocalFile[]>([]);
@@ -65,6 +69,7 @@ export default function App() {
   const [spotifyToken, setSpotifyToken] = useState<string | null>(null);
   const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState('');
+  const [spotifyRefreshRevision, setSpotifyRefreshRevision] = useState('');
   const [spotifyTracks, setSpotifyTracks] = useState<SpotifyTrackItem[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   // Lembra o modo "Seguir o Spotify" entre aberturas do app
@@ -95,6 +100,7 @@ export default function App() {
   const [orbitSpeed, setOrbitSpeed] = useState(0.35);
 
   // Som
+  const [preferredModeId, setPreferredModeId] = useState<string>('immersive');
   const [spatialEnabled, setSpatialEnabled] = useState(true);
   const [nightMode, setNightMode] = useState(false);
   const [activePreset, setActivePreset] = useState('Palco Amplo');
@@ -320,7 +326,8 @@ export default function App() {
     }
   };
 
-  const activeMode = [...customModes, ...LISTENING_MODES].find((mode) =>
+  const modesByPreference = [...LISTENING_MODES, ...customModes].sort((a, b) => Number(b.id === preferredModeId) - Number(a.id === preferredModeId));
+  const activeMode = modesByPreference.find((mode) =>
     mode.eq.gains.every((gain, i) => gain === eqGains[i]) &&
     mode.room === roomType && mode.mix === reverbMix && mode.spatial === spatialEnabled && mode.night === nightMode &&
     mode.orbit === autoOrbit && mode.speed === orbitSpeed && mode.elevation === elevation &&
@@ -330,6 +337,7 @@ export default function App() {
   );
 
   const applyListeningMode = (mode: ListeningMode) => {
+    setPreferredModeId(mode.id);
     selectPreset(mode.eq.name, [...mode.eq.gains]);
     changeRoom(mode.room);
     changeMix(mode.mix);
@@ -358,21 +366,24 @@ export default function App() {
       position: { ...pos }, elevation, spatial: spatialEnabled, night: nightMode,
     };
     const next = existing ? customModes.map(m => m.id === mode.id ? mode : m) : [...customModes, mode];
-    try { saveCustomModes(next); } catch { notify('Não foi possível salvar neste navegador. Seus ajustes continuam ativos.'); return false; }
+    try { saveCustomModes(next, accountIdentityRef.current ?? undefined); } catch { notify('Não foi possível salvar neste navegador. Seus ajustes continuam ativos.'); return false; }
     setCustomModes(next);
+    setPreferredModeId(mode.id);
     notify(`“${name}” salvo.`);
     return true;
   };
 
   const removeCustomMode = (id: string) => {
     const next = customModes.filter(m => m.id !== id);
-    try { saveCustomModes(next); } catch { notify('Não foi possível remover o modo salvo.'); return; }
+    try { saveCustomModes(next, accountIdentityRef.current ?? undefined); } catch { notify('Não foi possível remover o modo salvo.'); return; }
     setCustomModes(next);
     notify('Modo removido. O som atual foi mantido.');
   };
 
   // ---------- Fontes ----------
+  const lastRequestedPlaylist = useRef('');
   const selectPlaylist = useCallback(async (playlistId: string, token: string) => {
+    lastRequestedPlaylist.current = playlistId;
     setSelectedPlaylist(playlistId);
     setIsSyncing(true);
     try {
@@ -383,6 +394,12 @@ export default function App() {
       setIsSyncing(false);
     }
   }, [notify]);
+
+  useEffect(() => {
+    if (spotifyToken && selectedPlaylist && !isSyncing && lastRequestedPlaylist.current !== selectedPlaylist) {
+      void selectPlaylist(selectedPlaylist, spotifyToken);
+    }
+  }, [spotifyToken, selectedPlaylist, isSyncing, selectPlaylist]);
 
   const selectedPlaylistRef = useRef(selectedPlaylist);
   selectedPlaylistRef.current = selectedPlaylist;
@@ -731,7 +748,7 @@ export default function App() {
       setCloudStatus((s) => ({ ...s, phase: 'idle' }));
       return false;
     }
-    setCloudUrl(raw);
+    if (!accountIdentityRef.current) setCloudUrl(raw);
     setCloudUrlState(raw.trim());
     await requestPersistentStorage();
     lastSyncRef.current = 0;
@@ -740,7 +757,7 @@ export default function App() {
   };
 
   const disconnectCloud = () => {
-    clearCloudUrl();
+    if (!accountIdentityRef.current) clearCloudUrl();
     setCloudUrlState(null);
     setCloudStatus({ phase: 'idle', cloudCount: 0, total: 0, done: 0 });
     notify('Nuvem desconectada. As músicas já baixadas continuam no aparelho.');
@@ -755,6 +772,43 @@ export default function App() {
     loadTrack({ id: 'demo', name: 'Aether Demo — Órbita', artist: 'Faixa de demonstração', url, source: 'demo' });
   };
 
+  // Exclude volume, playback, OAuth credentials and the animated orbit angle.
+  const orbitRadius = Math.round(Math.hypot(pos.x, pos.z) * 1000) / 1000;
+  const accountSettings: AccountSettings = {
+    sound: JSON.stringify({ modeId: preferredModeId, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
+      spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed,
+      position: autoOrbit ? { x: 0, z: -orbitRadius } : pos, elevation }),
+    customModes: JSON.stringify(customModes), spotify: JSON.stringify({ playlistId: selectedPlaylist, refreshRevision: spotifyRefreshRevision }), cloudUrl: cloudUrl ?? '',
+  };
+  const applyAccountSettings = (patch: SettingsPatch) => {
+    if (patch.sound !== undefined) {
+      const sound = parseSound(patch.sound);
+      setPreferredModeId(sound.modeId ?? '');
+      setEqGains(sound.gains); setActivePreset(sound.preset); setRoomType(sound.room); setReverbMix(sound.mix);
+      setSpatialEnabled(sound.spatial); setNightMode(sound.night); setAutoOrbit(sound.orbit);
+      setOrbitSpeed(sound.speed); setPos(sound.position); setElevation(sound.elevation);
+      const engine = engineRef.current;
+      engine?.applyPreset(sound.gains); engine?.setRoomType(sound.room); engine?.setReverbMix(sound.mix);
+      engine?.setSpatialEnabled(sound.spatial); engine?.setNightMode(sound.night);
+    }
+    if (patch.customModes !== undefined) setCustomModes(parseModes(patch.customModes));
+    if (patch.spotify !== undefined) {
+      const spotify = parseSpotify(patch.spotify);
+      setSelectedPlaylist(spotify.playlistId);
+      setSpotifyRefreshRevision(spotify.refreshRevision);
+      if (spotify.refreshRevision && spotify.refreshRevision !== spotifyRefreshRevision && spotifyToken) {
+        void syncPlaylists(spotifyToken, true);
+      }
+    }
+    if (patch.cloudUrl !== undefined && patch.cloudUrl !== (cloudUrl ?? '')) {
+      setCloudUrlState(patch.cloudUrl || null);
+      lastSyncRef.current = 0;
+      setCloudStatus({ phase: 'idle', cloudCount: 0, total: 0, done: 0 });
+    }
+  };
+  const account = useAccount(accountSettings, applyAccountSettings);
+  accountIdentityRef.current = account.user?.uid ?? null;
+
   const engineActive = isPlaying && Boolean(engineRef.current?.ready);
 
   const library = (
@@ -767,7 +821,11 @@ export default function App() {
       currentIndex={currentIndex}
       isPlaying={isPlaying}
       onConnect={connectSpotify}
-      onSync={() => spotifyToken && syncPlaylists(spotifyToken)}
+      onSync={() => {
+        if (!spotifyToken) return;
+        setSpotifyRefreshRevision(crypto.randomUUID());
+        void syncPlaylists(spotifyToken);
+      }}
       following={followSpotify}
       onFollow={toggleFollow}
       spotifyNow={spotifyNow}
@@ -799,6 +857,7 @@ export default function App() {
             <h1 className="text-xl font-semibold tracking-[-0.05em]">aether<span className="text-accent ml-1.5 font-mono text-xs tracking-normal">3D</span></h1>
           </div>
           <div className="flex items-center gap-2">
+            <AccountPanel account={account} />
             <span
               className={`hidden sm:inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium ${
                 engineActive ? 'border-ok/30 bg-ok/[0.08] text-ok' : 'border-line-strong bg-surface text-ink-muted'

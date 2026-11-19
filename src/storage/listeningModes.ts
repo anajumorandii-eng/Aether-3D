@@ -5,7 +5,7 @@ export const MAX_CUSTOM_MODES = 12;
 const between = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 
-function valid(v: unknown): v is ListeningMode {
+export function validCustomMode(v: unknown): v is ListeningMode {
   if (!v || typeof v !== 'object') return false;
   const m = v as ListeningMode;
   return typeof m.id === 'string' && m.id.startsWith('custom-') &&
@@ -22,10 +22,10 @@ function valid(v: unknown): v is ListeningMode {
 export function loadCustomModes(): ListeningMode[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter(valid).slice(0, MAX_CUSTOM_MODES) : [];
+    return Array.isArray(parsed) ? parsed.filter(validCustomMode).slice(0, MAX_CUSTOM_MODES) : [];
   } catch { return []; }
 }
 
-export function saveCustomModes(modes: ListeningMode[]) {
-  localStorage.setItem(KEY, JSON.stringify(modes));
+export function saveCustomModes(modes: ListeningMode[], uid?: string) {
+  localStorage.setItem(uid ? `${KEY}_${uid}` : KEY, JSON.stringify(modes));
 }

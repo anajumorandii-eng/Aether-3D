@@ -1,0 +1,30 @@
+{
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Aether 3D",
+        "supportEmail": "anaju.morandii@gmail.com",
+        "authorizedRedirectUris": [
+          "https://aether-3d-sync-42043f7.firebaseapp.com/__/auth/handler",
+          "https://ambitious-sky-061d4a210.5.azurestaticapps.net",
+          "http://localhost"
+        ]
+      }
+    }
+  },
+  "database": {
+    "rules": "database.rules.json"
+  },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "database": {
+      "port": 9000
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  }
+}

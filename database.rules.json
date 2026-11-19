@@ -1,0 +1,21 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "settings": {
+          ".validate": "newData.hasChildren(['sound', 'customModes', 'spotify', 'cloudUrl'])",
+          "sound": { ".validate": "newData.isString() && newData.val().length <= 4096" },
+          "customModes": { ".validate": "newData.isString() && newData.val().length <= 32768" },
+          "spotify": { ".validate": "newData.isString() && newData.val().length <= 256" },
+          "cloudUrl": { ".validate": "newData.isString() && newData.val().length <= 8192" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
