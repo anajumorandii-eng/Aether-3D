@@ -131,7 +131,7 @@ export default function App() {
       .filter((f) => !used.has(f.url))
       .map((f) => ({ id: f.url, name: f.name, artist: 'Arquivo local', url: f.url, source: 'local' }));
     const demo: PlayableTrack[] = demoUrl
-      ? [{ id: 'demo', name: 'Aether Demo — Órbita', artist: 'Faixa de demonstração', url: demoUrl, source: 'demo' }]
+      ? [{ id: 'demo', name: 'Aether · Demonstração', artist: 'Faixa de demonstração', url: demoUrl, source: 'demo' }]
       : [];
     return [...merged, ...locals, ...demo];
   }, [spotifyTracks, localFiles, demoUrl]);
@@ -758,10 +758,10 @@ export default function App() {
       url = await createDemoTrackUrl();
       setDemoUrl(url);
     }
-    loadTrack({ id: 'demo', name: 'Aether Demo — Órbita', artist: 'Faixa de demonstração', url, source: 'demo' });
+    loadTrack({ id: 'demo', name: 'Aether · Demonstração', artist: 'Faixa de demonstração', url, source: 'demo' });
   };
 
-  // Exclude volume, playback, OAuth credentials and the animated orbit angle.
+  // Keep volume, playback and OAuth credentials local to each device.
 
   const accountSettings: AccountSettings = {
     sound: JSON.stringify({ modeId: preferredModeId, djIntensity, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
