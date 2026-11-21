@@ -142,4 +142,4 @@ Com **DJ ao vivo: mixar cada música** ligado, o passeio se adapta a cada músic
 
 **Imersão do 8D** (0–100%) acrescenta uma camada de 8D clássico: a música inteira, com os graves fora, gira pela mesma rotação com panorâmica forte, mais escura e um pouco mais baixa por trás da cabeça. Ela é atrasada pela latência do upmix (2048 amostras) para ficar alinhada com o resto. Quanto mais imersão, mais as partes paradas (a voz fixa à frente, as frentes) recuam.
 
-O modo **Íntimo** é para ouvir só você e a música: voz no máximo de foco (próxima, quente, com presença e ar), um espaço grande e escuro ao redor (Catedral, envolvimento alto), um passeio lento e sutil (imersão 25%) e nenhum efeito de DJ entre as músicas.
+O modo **Íntimo** é para ouvir só você e a música: voz no máximo de foco (próxima, quente, com presença e ar), a música aberta ao redor com pouca reverberação (Estúdio a 12%, envolvimento 65%, quase sem eco), um passeio lento e sutil (imersão 25%) e nenhum efeito de DJ entre as músicas.
