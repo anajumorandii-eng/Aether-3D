@@ -21,7 +21,8 @@ export const SPEAKERS = [
   { id: 'SL', azimuth: -100 }, { id: 'SR', azimuth: 100 }, { id: 'BL', azimuth: -145 }, { id: 'BR', azimuth: 145 },
 ] as const;
 
-const OUTPUT_TRIM = 0.72;
+// Seven speakers plus the voice and bass boosts add up: keep headroom so the limiter rarely works.
+const OUTPUT_TRIM = 0.6;
 
 /**
  * Stereo -> virtual 7.1 -> binaural. An AudioWorklet splits the mix into front, center, ambience and
@@ -104,7 +105,9 @@ export class VirtualSurround {
       this.presence = ctx.createBiquadFilter(); this.presence.type = 'peaking';
       this.presence.frequency.value = 3200; this.presence.Q.value = 0.9;
       this.centerClose = ctx.createGain(); this.centerClose.connect(trim);
-      split.connect(this.presence, 2); this.presence.connect(c); this.presence.connect(this.centerClose);
+      // A gentle cut of the "s" sounds, so the presence lift does not turn into hiss on the close voice.
+      const deEss = ctx.createBiquadFilter(); deEss.type = 'highshelf'; deEss.frequency.value = 7500; deEss.gain.value = -2.5;
+      split.connect(this.presence, 2); this.presence.connect(deEss); deEss.connect(c); deEss.connect(this.centerClose);
       split.connect(sl, 3); split.connect(sr, 4);
       // Rear speakers: the same ambience, delayed and darker, so sides and rears do not fuse.
       [[3, bl, 0.013], [4, br, 0.019]].forEach(([channel, target, delay]) => {
@@ -150,7 +153,7 @@ export class VirtualSurround {
     const voice = 1 + 0.9 * focus; const close = 0.2 + 0.8 * focus;
     set(this.centerClose, voice * close);
     set(this.centerGain, voice * (1 - close) * 1.1);
-    param(this.presence.gain, 4.5 * focus);
+    param(this.presence.gain, 3 * focus);
     this.frontGains.forEach(g => set(g, 1 - 0.3 * focus));
     this.sideGains.forEach(g => set(g, 0.55 + 0.75 * amount));
     this.backGains.forEach(g => set(g, 0.45 + 0.7 * amount));
@@ -205,7 +208,7 @@ function earlyReflections(ctx: BaseAudioContext): AudioBuffer {
     let low = 0;
     for (let i = Math.floor(rate * 0.012); i < length; i++) {
       low += 0.35 * (random() - low);
-      data[i] += low * 0.05 * Math.pow(1 - i / length, 2);
+      data[i] += low * 0.03 * Math.pow(1 - i / length, 2);
     }
   }
   return buffer;

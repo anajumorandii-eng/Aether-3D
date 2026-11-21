@@ -38,7 +38,7 @@ export function createDjMode(value: number): ListeningMode {
     ...base, id: 'dj', name: 'DJ 3D', djIntensity: intensity,
     description: 'Imersão completa: voz colada em você, graves com impacto e a pista em 7 alto-falantes virtuais ao redor.',
     eq: { name: `DJ 3D · ${intensity}%`, gains: [5,4,2,-1,-1,0,1,2,2,1].map(gain => Math.round(gain * strength * 10) / 10) },
-    room: 'hall', mix: Number((0.4 * strength).toFixed(3)),
+    room: 'hall', mix: Number((0.28 * strength).toFixed(3)),
     spatial: true, adaptive: true, adaptiveIntensity: intensity, orbit: false,
     surround: true, surroundAmount: Math.round(55 + 0.45 * intensity), voiceFocus: Math.round(70 + 0.3 * intensity), bassPunch: intensity,
     position: { x: 0, z: -0.5 },

@@ -61,6 +61,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     this.pLL = new Float32Array(BINS); this.pRR = new Float32Array(BINS);
     this.pLRr = new Float32Array(BINS); this.pLRi = new Float32Array(BINS);
     this.centerMask = new Float32Array(BINS); this.ambienceMask = new Float32Array(BINS);
+    this.rawCenter = new Float32Array(BINS); this.rawAmbience = new Float32Array(BINS); this.scratch = new Float32Array(BINS);
     this.generation = 0;
     this.active = true;
     this.reset();
@@ -140,9 +141,22 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       let mc = Math.max(0, Math.min(1, (similarity * inPhase - 0.4) / 0.45)) * this.voiceBand[k] * strength;
       let ma = Math.max(0, Math.min(1, (1 - coherence) * balance * 1.25)) * amount;
       if (sum < 1e-14) { mc = 0; ma = 0; }
-      this.centerMask[k] = 0.5 * this.centerMask[k] + 0.5 * mc;
-      this.ambienceMask[k] = 0.6 * this.ambienceMask[k] + 0.4 * ma;
-      mc = this.centerMask[k] * rest; ma = this.ambienceMask[k];
+      this.rawCenter[k] = mc; this.rawAmbience[k] = ma;
+    }
+    // Masks that jump from bin to bin and frame to frame make "musical noise" (a hiss or warble in the
+    // highs). Smooth them across neighbouring frequencies, then over time.
+    this.smoothAcrossBins(this.rawCenter); this.smoothAcrossBins(this.rawAmbience);
+    for (let k = 0; k < BINS; k++) {
+      this.centerMask[k] = 0.6 * this.centerMask[k] + 0.4 * this.rawCenter[k];
+      this.ambienceMask[k] = 0.8 * this.ambienceMask[k] + 0.2 * this.rawAmbience[k];
+    }
+    for (let k = 0; k < BINS; k++) {
+      const nk = (N - k) % N;
+      const lr = (re[k] + re[nk]) * 0.5; const li = (im[k] - im[nk]) * 0.5;
+      const rr = (im[k] + im[nk]) * 0.5; const ri = (re[nk] - re[k]) * 0.5;
+      const ll = lr * lr + li * li; const rrE = rr * rr + ri * ri;
+      const bass = this.bass[k]; const rest = 1 - bass;
+      const mc = this.centerMask[k] * rest; const ma = this.ambienceMask[k];
       const cr = mc * (lr + rr) * 0.5; const ci = mc * (li + ri) * 0.5;
       const l1r = lr * rest - cr; const l1i = li * rest - ci;
       const r1r = rr * rest - cr; const r1i = ri * rest - ci;
@@ -165,6 +179,15 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       acc.copyWithin(0, HOP); acc.fill(0, N - HOP);
     }
     this.frames++;
+  }
+
+  /** Two passes of a [1/4, 1/2, 1/4] kernel across frequency (an effective 5-bin smoothing). */
+  smoothAcrossBins(mask) {
+    const t = this.scratch;
+    for (let pass = 0; pass < 2; pass++) {
+      t.set(mask);
+      for (let k = 1; k < BINS - 1; k++) mask[k] = 0.25 * t[k - 1] + 0.5 * t[k] + 0.25 * t[k + 1];
+    }
   }
 
   synthesizeSingle(a) {

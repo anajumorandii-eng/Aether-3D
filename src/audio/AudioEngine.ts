@@ -31,6 +31,7 @@ export class SpatialAudioEngine {
   private spatialGain: GainNode | null = null;
   private stereoGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
+  private limiterNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
   private isInitialized = false;
   private playback: PlaybackSession;
@@ -129,6 +130,13 @@ export class SpatialAudioEngine {
     this.compressorNode.ratio.value = 4;
     this.compressorNode.attack.value = 0.005;
     this.compressorNode.release.value = 0.15;
+    // 5b. Limitador final: nada passa de ~-1 dBFS, mesmo com voz, graves e EQ no máximo (evita estalo e chiado).
+    this.limiterNode = this.ctx.createDynamicsCompressor();
+    this.limiterNode.threshold.value = -2;
+    this.limiterNode.knee.value = 0;
+    this.limiterNode.ratio.value = 20;
+    this.limiterNode.attack.value = 0.001;
+    this.limiterNode.release.value = 0.1;
 
     // Crossfade between the binaural path and the original stereo path.
     this.spatialGain = this.ctx.createGain();
@@ -169,7 +177,8 @@ export class SpatialAudioEngine {
     lastFilter.connect(this.echoSend); this.echoSend.connect(echo); echo.connect(dark); dark.connect(feedback); feedback.connect(echo);
     dark.connect(this.compressorNode);
     this.surround.onTrackGap = () => this.djTrackChange();
-    this.compressorNode.connect(this.analyserNode);
+    this.compressorNode.connect(this.limiterNode);
+    this.limiterNode.connect(this.analyserNode);
     this.analyserNode.connect(this.ctx.destination);
 
     this.isInitialized = true;
@@ -374,11 +383,18 @@ export class SpatialAudioEngine {
     const length = Math.floor(rate * duration);
     const impulse = this.ctx.createBuffer(2, length, rate);
 
+    // Like a real room: a short pre-delay, and highs that die faster than lows. Plain white noise
+    // here sounded like hiss on top of the music.
+    const preDelay = Math.floor(rate * 0.012);
     for (let channel = 0; channel < 2; channel++) {
       const data = impulse.getChannelData(channel);
-      for (let i = 0; i < length; i++) {
-        const envelope = Math.pow(1 - i / length, decay);
-        data[i] = (Math.random() * 2 - 1) * envelope;
+      let low = 0;
+      for (let i = preDelay; i < length; i++) {
+        const progress = i / length;
+        const envelope = Math.pow(1 - progress, decay);
+        const cutoff = 7000 - 5500 * Math.sqrt(progress);
+        low += (1 - Math.exp((-2 * Math.PI * cutoff) / rate)) * (Math.random() * 2 - 1 - low);
+        data[i] = low * envelope * 1.6;
       }
     }
 

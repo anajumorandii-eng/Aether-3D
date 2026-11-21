@@ -25,6 +25,17 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     assert(gains.surround > 0.99 && gains.adaptive < 0.01 && gains.manual < 0.01 && gains.stereo < 0.01, JSON.stringify(gains));
     const loud = await p.evaluate(() => { const d = new Uint8Array(128); engine.getFrequencyData(d); return Math.max(...d); });
     assert(loud > 100, 'surround output should be audible');
+    // Everything at maximum (voice, bass impact, envelopment, DJ EQ, theatre reverb): the output must not clip.
+    const peak = await p.evaluate(async () => {
+      engine.setVoiceFocus(100); engine.setBassPunch(100); engine.setSurroundAmount(100);
+      engine.applyPreset([5, 4, 2, -1, -1, 0, 1, 2, 2, 1]); engine.setRoomType('hall'); engine.setReverbMix(0.4);
+      engine.getAudioElement().volume = 1;
+      const buf = new Float32Array(engine.analyserNode.fftSize); let max = 0;
+      for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 25)); engine.analyserNode.getFloatTimeDomainData(buf); for (const v of buf) max = Math.max(max, Math.abs(v)); }
+      engine.setRoomType('off'); engine.setReverbMix(0); engine.applyPreset([0,0,0,0,0,0,0,0,0,0]);
+      return max;
+    });
+    assert(peak < 1, `output must stay below full scale, peak ${peak}`);
     await p.evaluate(() => engine.setSurroundEnabled(false));
     await p.waitForTimeout(300);
     const back = await p.evaluate(() => ({ surround: engine.surroundGain.gain.value, adaptive: engine.adaptiveGain.gain.value }));
