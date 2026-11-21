@@ -118,3 +118,12 @@ Na **Biblioteca → Ao vivo · Computador** (Chrome ou Edge no computador):
 O cancelamento de eco, a supressão de ruído e o controle automático de ganho ficam desligados, porque estragariam a música. Controle a música no próprio Spotify. Tocar um arquivo encerra a captura. Desative o HeSuVi/Equalizer APO no fone para o processamento não dobrar.
 
 Para testar: `npm run test:audio` (inclui `tests/surround-dsp.cjs` e `tests/surround-browser.cjs`).
+
+## DJ ao vivo
+
+Com o Cinema 7.1 ligado (e no DJ 3D), dois controles a mais:
+
+- **DJ ao vivo: mixar cada música** (`src/audio/autoMix.ts`): o Aether mede a voz, a ambiência e os graves de cada música e ajusta a mixagem dela a partir dos seus controles. Mixagens com muito reverb recebem menos espaço extra, para não ecoar. Faixas secas recebem mais. A voz vem para a frente quando os graves ou a reverberação a encobrem. Faixas com muito grave recebem menos reforço, e faixas magras, mais. O painel mostra o ajuste da música atual.
+- **Transições de DJ**: nos últimos segundos de uma música, os graves são filtrados e o som ecoa (eco em colcheia pontuada). Quando a música nova começa, o filtro abre a partir dos graves, o eco da anterior se apaga e o ambiente se abre por alguns segundos.
+
+A ordem das músicas fica com o Spotify (aleatório, Smart Shuffle e o crossfade dele). Pela entrada ao vivo, o Aether recebe uma música por vez, então não sobrepõe duas faixas. Com o Spotify conectado e a permissão de “Seguir o Spotify” concedida uma vez, o app lê a música atual a cada 2,5 s: a saída começa antes do fim e o player mostra nome e capa. Durante a captura, nunca assume a reprodução. Sem o Spotify conectado, a troca é percebida pelo silêncio entre as músicas. Arquivos locais recebem as mesmas transições.

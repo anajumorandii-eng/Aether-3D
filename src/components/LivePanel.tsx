@@ -5,6 +5,8 @@ import { PanelHeader } from './ui';
 
 interface Props {
   liveLabel: string | null;
+  /** Spotify connected with permission to read what is playing: enables timed DJ transitions. */
+  spotifyLinked: boolean;
   busy: boolean;
   error: string | null;
   onTab: () => void;
@@ -15,7 +17,7 @@ interface Props {
 const secondary = 'w-full flex items-center justify-center gap-2 rounded-md border border-line-strong bg-raised/60 text-xs font-medium py-2.5 text-ink hover:bg-raised disabled:opacity-40 transition';
 
 /** Live sources for the computer: the Spotify web player in a tab, or a virtual cable. */
-export function LivePanel({ liveLabel, busy, error, onTab, onDevice, onStop }: Props) {
+export function LivePanel({ liveLabel, spotifyLinked, busy, error, onTab, onDevice, onStop }: Props) {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [selected, setSelected] = useState('');
   const [listError, setListError] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export function LivePanel({ liveLabel, busy, error, onTab, onDevice, onStop }: P
             <span className="truncate">Tocando ao vivo: <b className="text-ink font-medium">{liveLabel}</b></span>
           </p>
           <p className="text-[11px] text-ink-faint mt-2">Controle a música no próprio Spotify. O som passa pelo motor do Aether, sem salvar arquivos.</p>
+          <p className="text-[11px] text-ink-faint mt-2">{spotifyLinked ? 'Spotify conectado: as transições de DJ começam antes do fim de cada música.' : 'Conecte o Spotify e ative “Seguir o Spotify” uma vez (pode desligar depois) para as transições começarem antes do fim de cada música. Sem isso, elas acontecem quando a música nova começa.'}</p>
         </div>
       ) : (
         <div className="space-y-2.5">

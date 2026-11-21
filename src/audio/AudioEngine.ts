@@ -44,6 +44,12 @@ export class SpatialAudioEngine {
   private spatialOn = true;
   private adaptiveOn = true;
   private surroundOn = false;
+  // Live DJ: a high-pass filter at the input for sweeps, and an echo bus for outros.
+  private djFilter: BiquadFilterNode | null = null;
+  private echoSend: GainNode | null = null;
+  private djTransitions = true;
+  private lastTrackChange = -Infinity;
+  private outroArmed = false;
   private impulseRoom: RoomType | null = null;
 
   constructor() {
@@ -89,6 +95,12 @@ export class SpatialAudioEngine {
       this.filters[i].connect(this.filters[i + 1]);
     }
 
+    // 2b. Filtro de transição do DJ (transparente em 20 Hz)
+    this.djFilter = this.ctx.createBiquadFilter();
+    this.djFilter.type = 'highpass';
+    this.djFilter.frequency.value = 20;
+    this.djFilter.Q.value = 0.7;
+
     // 3. Reverb convolucional (dry/wet)
     this.convolverNode = this.ctx.createConvolver();
     this.dryGain = this.ctx.createGain();
@@ -133,7 +145,8 @@ export class SpatialAudioEngine {
 
     // Cadeia DSP: Source -> EQ -> (Dry + Reverb) -> Panner3D -> Compressor -> Analyser -> Saída
     const lastFilter = this.filters[this.filters.length - 1];
-    this.sourceNode.connect(this.filters[0]);
+    this.sourceNode.connect(this.djFilter);
+    this.djFilter.connect(this.filters[0]);
     lastFilter.connect(this.dryGain);
     lastFilter.connect(this.convolverNode);
     this.convolverNode.connect(this.wetGain);
@@ -146,6 +159,14 @@ export class SpatialAudioEngine {
     this.stereoGain.connect(this.compressorNode);
     this.adaptiveGain.connect(this.compressorNode);
     this.surroundGain.connect(this.compressorNode);
+    // Echo out: a dotted-eighth feedback delay, darkened, fed only during a DJ outro.
+    this.echoSend = this.ctx.createGain(); this.echoSend.gain.value = 0;
+    const echo = this.ctx.createDelay(1); echo.delayTime.value = 0.375;
+    const feedback = this.ctx.createGain(); feedback.gain.value = 0.42;
+    const dark = this.ctx.createBiquadFilter(); dark.type = 'lowpass'; dark.frequency.value = 3000;
+    lastFilter.connect(this.echoSend); this.echoSend.connect(echo); echo.connect(dark); dark.connect(feedback); feedback.connect(echo);
+    dark.connect(this.compressorNode);
+    this.surround.onTrackGap = () => this.djTrackChange();
     this.compressorNode.connect(this.analyserNode);
     this.analyserNode.connect(this.ctx.destination);
 
@@ -175,7 +196,7 @@ export class SpatialAudioEngine {
     const ctx = this.ctx!;
     this.streamSource = ctx.createMediaStreamSource(stream);
     this.sourceNode?.disconnect();
-    this.streamSource.connect(this.filters[0]);
+    this.streamSource.connect(this.djFilter!);
     this.resetAdaptiveAnalysis();
     await Promise.all([ctx.resume(), this.adaptiveReady, this.surroundReady]);
   }
@@ -184,7 +205,7 @@ export class SpatialAudioEngine {
     if (!this.streamSource) return;
     this.streamSource.disconnect();
     this.streamSource = null;
-    if (this.sourceNode && this.filters[0]) this.sourceNode.connect(this.filters[0]);
+    if (this.sourceNode && this.djFilter) this.sourceNode.connect(this.djFilter);
   }
 
   public get streaming() { return this.streamSource !== null; }
@@ -216,6 +237,51 @@ export class SpatialAudioEngine {
   public setSurroundAmount(value: number) { this.surround.setAmount(value / 100); }
   /** How far forward and close the voice sits, 0–100. */
   public setVoiceFocus(value: number) { this.surround.setFocus(value / 100); }
+  /** Live DJ: adapt voice, envelopment and bass to each song. */
+  public setAutoMix(enabled: boolean) { this.surround.setAutoMix(enabled); }
+  /** Live DJ: filter sweeps and echo between songs. */
+  public setDjTransitions(enabled: boolean) {
+    this.djTransitions = enabled;
+    if (!enabled && this.ctx && this.djFilter && this.echoSend) {
+      const t = this.ctx.currentTime;
+      this.djFilter.frequency.cancelScheduledValues(t); this.djFilter.frequency.setTargetAtTime(20, t, 0.1);
+      this.echoSend.gain.cancelScheduledValues(t); this.echoSend.gain.setTargetAtTime(0, t, 0.1);
+      this.outroArmed = false;
+    }
+  }
+
+  /**
+   * The last seconds of a song: the low end is filtered away and the music echoes out, the way a DJ
+   * leaves a track. Called with the time left, from the Spotify position.
+   */
+  public djOutro(secondsLeft: number) {
+    if (!this.djTransitions || this.outroArmed || !this.ctx || !this.djFilter || !this.echoSend) return;
+    const t = this.ctx.currentTime; const length = Math.max(2, Math.min(10, secondsLeft));
+    this.outroArmed = true;
+    const f = this.djFilter.frequency; f.cancelScheduledValues(t); f.setValueAtTime(Math.max(20, f.value), t); f.exponentialRampToValueAtTime(650, t + length);
+    const e = this.echoSend.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0.55, t + length);
+    // If no new song is noticed (paused, or the queue ended), open the sound again anyway.
+    window.setTimeout(() => { if (this.outroArmed) { this.lastTrackChange = -Infinity; this.djTrackChange(); } }, (length + 8) * 1000);
+  }
+
+  /**
+   * A new song: the filter sweeps open from the bass up and the echo of the last song rings out,
+   * while the room opens for a few seconds. Repeated signals within 8 s are one change.
+   */
+  public djTrackChange() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (t - this.lastTrackChange < 8) return;
+    this.lastTrackChange = t;
+    const transitions = this.djTransitions && this.djFilter && this.echoSend;
+    this.surround.newTrack(transitions ? 6 : 0);
+    if (!transitions) return;
+    const f = this.djFilter!.frequency; f.cancelScheduledValues(t);
+    f.setValueAtTime(this.outroArmed ? Math.max(20, f.value) : 420, t); f.exponentialRampToValueAtTime(20, t + 2.5);
+    const e = this.echoSend!.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0, t + 0.6);
+    this.outroArmed = false;
+  }
+
   /** Sub-bass impact in the surround renderer, 0–100. */
   public setBassPunch(value: number) { this.surround.setPunch(value / 100); }
   public getSurroundAnalysis() { return { ...this.surround.analysis }; }

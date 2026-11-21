@@ -41,6 +41,23 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     await p.waitForFunction(() => engine.getSurroundAnalysis().frames > 24000);
     const live = await p.evaluate(() => ({ streaming: engine.streaming, paused: engine.getAudioElement().paused, center: engine.getSurroundAnalysis().center }));
     assert(live.streaming && live.paused && live.center > 0.5, JSON.stringify(live));
+    // Live DJ: per-song offsets appear, the outro filters and echoes, a new song sweeps back open.
+    await p.waitForFunction(() => Boolean(engine.getSurroundAnalysis().offsets));
+    const dj = await p.evaluate(async () => {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      engine.djOutro(1); await wait(2200); // shortest outro is 2 s
+      const outro = { filter: engine.djFilter.frequency.value, echo: engine.echoSend.gain.value };
+      engine.djTrackChange(); await wait(3000);
+      const after = { filter: engine.djFilter.frequency.value, echo: engine.echoSend.gain.value };
+      engine.djTrackChange(); // within 8 s: ignored
+      const repeat = engine.djFilter.frequency.value;
+      engine.setDjTransitions(false); engine.djOutro(2); await wait(300);
+      return { outro, after, repeat, off: { filter: engine.djFilter.frequency.value, echo: engine.echoSend.gain.value } };
+    });
+    assert(dj.outro.filter > 500 && dj.outro.echo > 0.4, JSON.stringify(dj));
+    assert(dj.after.filter < 25 && dj.after.echo < 0.01, JSON.stringify(dj));
+    assert(dj.repeat < 25 && dj.off.filter < 25 && dj.off.echo < 0.01, JSON.stringify(dj));
+    console.log('Live DJ: per-song offsets, echo-out outro, filter sweep on a new song, debounce and off switch: OK');
     await p.evaluate(() => engine.play());
     assert.equal(await p.evaluate(() => engine.streaming), false, 'playing a file detaches the live stream');
     await p.evaluate(() => engine.dispose());
@@ -67,6 +84,10 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     await p.getByRole('button', { name: 'DJ 3D', exact: true }).click();
     assert.equal(await p.getByRole('switch', { name: 'Cinema 7.1 virtual' }).getAttribute('aria-checked'), 'true', 'DJ 3D uses the full surround renderer');
     assert.equal(await p.getByRole('slider', { name: 'Impacto dos graves', exact: true }).inputValue(), '65');
+    assert.equal(await p.getByRole('switch', { name: 'DJ ao vivo: mixar cada música' }).getAttribute('aria-checked'), 'true');
+    await p.getByRole('switch', { name: 'Transições de DJ' }).click();
+    assert.equal(await p.getByRole('switch', { name: 'Transições de DJ' }).getAttribute('aria-checked'), 'false');
+    await p.getByText(/^Nesta música: Voz/).waitFor({ timeout: 15000 });
     console.log('DJ 3D: full immersion with voice focus and bass impact: OK');
 
     for (const width of [320, 390, 768, 1440]) { await p.setViewportSize({ width, height: 900 }); assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `no horizontal scroll at ${width}`); }

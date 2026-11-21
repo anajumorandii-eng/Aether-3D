@@ -78,7 +78,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     this.pLL.fill(0); this.pRR.fill(0); this.pLRr.fill(0); this.pLRi.fill(0);
     this.centerMask.fill(0); this.ambienceMask.fill(0);
     this.position = 0; this.frames = 0; this.postFrames = 0;
-    this.energyIn = 0; this.energyCenter = 0; this.energyAmbience = 0;
+    this.energyIn = 0; this.energyCenter = 0; this.energyAmbience = 0; this.energyBass = 0; this.windowSquares = 0; this.windowCount = 0;
   }
 
   fft(re, im) {
@@ -153,6 +153,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       BL.re[k] = lr * bass; BL.im[k] = li * bass; BR.re[k] = rr * bass; BR.im[k] = ri * bass;
       if (k === 0 || k === N / 2) for (const s of this.spec) s.im[k] = 0;
       this.energyIn += ll + rrE;
+      this.energyBass += bass * (ll + rrE);
       this.energyCenter += 2 * (cr * cr + ci * ci);
       this.energyAmbience += ma * (l1r * l1r + l1i * l1i + r1r * r1r + r1i * r1i);
     }
@@ -187,7 +188,9 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < frames; i++) {
       const at = this.position;
       for (let c = 0; c < out.length && c < CHANNELS; c++) out[c][i] = this.ready[c][at];
-      this.pendingL[at] = left?.[i] ?? 0; this.pendingR[at] = right?.[i] ?? 0;
+      const l = left?.[i] ?? 0; const r = right?.[i] ?? 0;
+      this.pendingL[at] = l; this.pendingR[at] = r;
+      this.windowSquares += (l * l + r * r) * 0.5; this.windowCount++;
       this.position++;
       if (this.position === HOP) {
         this.position = 0;
@@ -200,8 +203,11 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     if (this.postFrames >= sampleRate / 4) {
       this.postFrames = 0;
       const total = this.energyIn + 1e-20;
-      this.port.postMessage({ generation: this.generation, center: this.energyCenter / total, ambience: this.energyAmbience / total, frames: this.frames * HOP });
-      this.energyIn *= 0.5; this.energyCenter *= 0.5; this.energyAmbience *= 0.5;
+      // level: input loudness of the last 250 ms in dBFS, used to notice the gap between songs.
+      const level = 10 * Math.log10(this.windowSquares / Math.max(1, this.windowCount) + 1e-12);
+      this.port.postMessage({ generation: this.generation, center: this.energyCenter / total, ambience: this.energyAmbience / total, bass: this.energyBass / total, level, frames: this.frames * HOP });
+      this.energyIn *= 0.5; this.energyCenter *= 0.5; this.energyAmbience *= 0.5; this.energyBass *= 0.5;
+      this.windowSquares = 0; this.windowCount = 0;
     }
     return true;
   }

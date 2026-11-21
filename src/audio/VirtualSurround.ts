@@ -1,9 +1,17 @@
+import { AutoMixer, type MixOffsets } from './autoMix';
+
 export interface SurroundAnalysis {
   status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
   /** Share of the input energy sent to the center (voice) speaker, 0–1. */
   center: number;
   /** Share of the input energy sent to the side and rear speakers, 0–1. */
   ambience: number;
+  /** Share of the input energy below ~120 Hz, 0–1. */
+  bass?: number;
+  /** Input loudness of the last 250 ms, dBFS. */
+  level?: number;
+  /** Live DJ adjustment for the current song, as fractions added to each setting. */
+  offsets?: MixOffsets;
   frames: number;
 }
 
@@ -28,6 +36,12 @@ export class VirtualSurround {
   private amount = 0.7;
   private focus = 0.7;
   private punch = 0.3;
+  private autoMixer = new AutoMixer();
+  private autoMix = true;
+  private surgeStart = 0;
+  private surgeLength = 0;
+  /** Called when the audio shows a gap between songs and a new one starts. */
+  onTrackGap: (() => void) | null = null;
   private centerClose: GainNode | null = null;
   private presence: BiquadFilterNode | null = null;
   private bassShelf: BiquadFilterNode | null = null;
@@ -55,7 +69,11 @@ export class VirtualSurround {
       this.node = node;
       node.port.onmessage = event => {
         const { generation, ...metrics } = event.data;
-        if (generation === this.generation) this.analysis = { status: 'ready', ...metrics };
+        if (generation !== this.generation) return;
+        let gap = false;
+        if (this.active && this.autoMix) { gap = this.autoMixer.update(metrics); this.applyLevels(); }
+        this.analysis = { status: 'ready', ...metrics, offsets: this.autoMix ? { ...this.autoMixer.offsets } : undefined };
+        if (gap) this.onTrackGap?.();
       };
       node.onprocessorerror = () => { this.analysis.status = 'error'; this.onFailure(); };
       node.port.postMessage({ type: 'reset', generation: this.generation });
@@ -122,26 +140,37 @@ export class VirtualSurround {
     if (!ctx || !this.centerGain || !this.reflectionGain || !this.centerClose || !this.presence || !this.bassShelf || !this.bassGain) return;
     const set = (g: GainNode, v: number) => immediate ? (g.gain.value = v) : g.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
     const param = (p: AudioParam, v: number) => immediate ? (p.value = v) : p.setTargetAtTime(v, ctx.currentTime, 0.05);
+    const o = this.autoMix ? this.autoMixer.offsets : { focus: 0, amount: 0, punch: 0 };
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    // A DJ transition opens the room for a few seconds, then settles back.
+    const surge = this.surgeLength > 0 ? 0.3 * Math.max(0, 1 - (ctx.currentTime - this.surgeStart) / this.surgeLength) : 0;
+    const focus = clamp01(this.focus + o.focus); const amount = clamp01(this.amount + o.amount + surge); const punch = clamp01(this.punch + o.punch);
     // Voice focus: up to about +5.5 dB overall, mostly on the close path, with presence at 3.2 kHz.
-    const voice = 1 + 0.9 * this.focus; const close = 0.2 + 0.8 * this.focus;
+    const voice = 1 + 0.9 * focus; const close = 0.2 + 0.8 * focus;
     set(this.centerClose, voice * close);
     set(this.centerGain, voice * (1 - close) * 1.1);
-    param(this.presence.gain, 4.5 * this.focus);
-    this.frontGains.forEach(g => set(g, 1 - 0.3 * this.focus));
-    this.sideGains.forEach(g => set(g, 0.55 + 0.75 * this.amount));
-    this.backGains.forEach(g => set(g, 0.45 + 0.7 * this.amount));
+    param(this.presence.gain, 4.5 * focus);
+    this.frontGains.forEach(g => set(g, 1 - 0.3 * focus));
+    this.sideGains.forEach(g => set(g, 0.55 + 0.75 * amount));
+    this.backGains.forEach(g => set(g, 0.45 + 0.7 * amount));
     // Bass impact: a sub shelf up to +7 dB and a little more level, outside the HRTF stage.
-    param(this.bassShelf.gain, 7 * this.punch);
-    set(this.bassGain, 1 + 0.25 * this.punch);
-    set(this.reflectionGain, 0.08 + 0.1 * this.amount);
+    param(this.bassShelf.gain, 7 * punch);
+    set(this.bassGain, 1 + 0.25 * punch);
+    set(this.reflectionGain, 0.08 + 0.1 * amount);
     const now = ctx.currentTime;
-    this.node?.parameters.get('amount')?.setTargetAtTime(this.amount, now, 0.08);
-    this.node?.parameters.get('focus')?.setTargetAtTime(this.focus, now, 0.08);
+    this.node?.parameters.get('amount')?.setTargetAtTime(amount, now, 0.08);
+    this.node?.parameters.get('focus')?.setTargetAtTime(focus, now, 0.08);
   }
 
   setAmount(amount: number) { this.amount = Math.max(0, Math.min(1, amount)); this.applyLevels(); }
   setFocus(focus: number) { this.focus = Math.max(0, Math.min(1, focus)); this.applyLevels(); }
   setPunch(punch: number) { this.punch = Math.max(0, Math.min(1, punch)); this.applyLevels(); }
+  setAutoMix(enabled: boolean) { this.autoMix = enabled; if (!enabled) this.autoMixer.reset(); this.applyLevels(); }
+  /** A new song is starting: relearn it and open the room for a moment. */
+  newTrack(surgeSeconds = 0) {
+    this.autoMixer.newTrack();
+    if (surgeSeconds > 0 && this.ctx) { this.surgeStart = this.ctx.currentTime; this.surgeLength = surgeSeconds; this.applyLevels(); }
+  }
   /** The worklet skips its FFTs while another route is playing, to save battery. */
   setActive(active: boolean) {
     if (active === this.active) return;
@@ -151,7 +180,8 @@ export class VirtualSurround {
   reset() {
     this.generation++;
     this.node?.port.postMessage({ type: 'reset', generation: this.generation });
-    this.analysis = { ...this.analysis, center: 0, ambience: 0, frames: 0 };
+    this.autoMixer.reset();
+    this.analysis = { ...this.analysis, center: 0, ambience: 0, frames: 0, offsets: undefined };
   }
 }
 
