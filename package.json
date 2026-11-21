@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test:accounts": "node tests/accounts.cjs && node tests/account-security.cjs && node tests/spotify-account-sync.cjs",
-    "test:audio": "node tests/adaptive-dsp.cjs && node tests/surround-dsp.cjs && node tests/auto-mix.cjs && node tests/audio-playback.cjs && node tests/dj-levels.cjs && node tests/adaptive-browser.cjs && node tests/surround-browser.cjs",
+    "test:audio": "node tests/adaptive-dsp.cjs && node tests/surround-dsp.cjs && node tests/auto-mix.cjs && node tests/audio-playback.cjs && node tests/dj-levels.cjs && node tests/adaptive-browser.cjs && node tests/surround-browser.cjs && node tests/live-dj-browser.cjs",
     "test:spotify": "node tests/spotify-handoff.cjs && node tests/spotify-handoff-browser.cjs"
   },
   "dependencies": {

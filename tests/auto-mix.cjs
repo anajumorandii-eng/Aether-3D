@@ -24,5 +24,15 @@ const assert = require('node:assert/strict');
   m.update({ center: 0.2, ambience: 0.05, bass: 0.6, level: -80 });
   assert.equal(m.update({ center: 0.2, ambience: 0.05, bass: 0.6, level: -15 }), false);
   m.reset(); assert.deepEqual(m.offsets, { focus: 0, amount: 0, punch: 0 });
+  // Songs crossfaded with no silence: a sustained change of character counts, after 40 s of a song.
+  const n = new AutoMixer(); let noticed = 0;
+  for (let i = 0; i < 60 * 4; i++) noticed += n.update({ center: 0.35, ambience: 0.3, bass: 0.15, level: -20 });
+  assert.equal(noticed, 0, 'a steady song is one song');
+  for (let i = 0; i < 6 * 4; i++) noticed += n.update({ center: 0.05, ambience: 0.05, bass: 0.6, level: -12 });
+  assert.equal(noticed, 1, 'a different song without a gap is noticed once');
+  const off = new AutoMixer(); off.detectNovelty = false; let offCount = 0;
+  for (let i = 0; i < 60 * 4; i++) offCount += off.update({ center: 0.35, ambience: 0.3, bass: 0.15, level: -20 });
+  for (let i = 0; i < 6 * 4; i++) offCount += off.update({ center: 0.05, ambience: 0.05, bass: 0.6, level: -12 });
+  assert.equal(offCount, 0, 'with Spotify timing, only gaps count');
   console.log('Live DJ auto-mix: per-song targets, smoothing, gap detection, short dips ignored, reset: OK');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -3,10 +3,12 @@ import { SPEAKERS, type SurroundAnalysis } from '../audio/VirtualSurround';
 import { Range, Toggle } from './ui';
 
 /** Cinema 7.1: seven virtual speakers around the head, the voice isolated in front. */
-export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions }: {
+export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status }: {
   readAnalysis: () => SurroundAnalysis | null; playing: boolean; enabled: boolean;
   amount: number; focus: number; punch: number; onAmount: (value: number) => void; onFocus: (value: number) => void; onPunch: (value: number) => void;
   autoMix: boolean; onAutoMix: (enabled: boolean) => void; transitions: boolean; onTransitions: (enabled: boolean) => void;
+  /** How song changes are being timed while playing live; null otherwise. */
+  status?: string | null;
 }) {
   const [analysis, setAnalysis] = useState<SurroundAnalysis | null>(null);
   useEffect(() => { const read = () => setAnalysis(readAnalysis()); read(); const timer = window.setInterval(read, 400); return () => clearInterval(timer); }, [readAnalysis]);
@@ -32,6 +34,7 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
     <div className="mt-5 border-t border-line-strong pt-4 space-y-3">
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>DJ ao vivo: mixar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="DJ ao vivo: mixar cada música" /></div>
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Transições de DJ</span><Toggle checked={transitions} onChange={onTransitions} label="Transições de DJ" /></div>
+      {transitions && status && <p role="status" className="text-xs text-ink-muted">{status}</p>}
       {autoMix && measured && analysis.offsets && <p className="text-xs text-ink-muted">Nesta música: <span className="font-mono text-ink">{[['Voz', analysis.offsets.focus], ['Envolvimento', analysis.offsets.amount], ['Graves', analysis.offsets.punch]].map(([label, v]) => `${label} ${Number(v) >= 0 ? '+' : '−'}${Math.abs(Math.round(Number(v) * 100))}`).join(' · ')}</span></p>}
       <p className="text-[11px] text-ink-muted leading-relaxed">Cada música recebe sua própria mixagem, a partir dos seus ajustes acima. Nas trocas, o filtro abre a partir dos graves e o fim da música anterior ecoa.</p>
     </div>

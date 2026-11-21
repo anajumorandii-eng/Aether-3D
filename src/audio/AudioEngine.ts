@@ -50,6 +50,8 @@ export class SpatialAudioEngine {
   private djTransitions = true;
   private lastTrackChange = -Infinity;
   private outroArmed = false;
+  /** Told when a new song is noticed (from Spotify, from the audio, or a new file). */
+  public onDjTransition: (() => void) | null = null;
   private impulseRoom: RoomType | null = null;
 
   constructor() {
@@ -239,6 +241,8 @@ export class SpatialAudioEngine {
   public setVoiceFocus(value: number) { this.surround.setFocus(value / 100); }
   /** Live DJ: adapt voice, envelopment and bass to each song. */
   public setAutoMix(enabled: boolean) { this.surround.setAutoMix(enabled); }
+  /** Spotify reports song changes: the audio-based guess is then limited to clear gaps. */
+  public setSpotifyTiming(enabled: boolean) { this.surround.setNoveltyDetection(!enabled); }
   /** Live DJ: filter sweeps and echo between songs. */
   public setDjTransitions(enabled: boolean) {
     this.djTransitions = enabled;
@@ -254,32 +258,35 @@ export class SpatialAudioEngine {
    * The last seconds of a song: the low end is filtered away and the music echoes out, the way a DJ
    * leaves a track. Called with the time left, from the Spotify position.
    */
-  public djOutro(secondsLeft: number) {
-    if (!this.djTransitions || this.outroArmed || !this.ctx || !this.djFilter || !this.echoSend) return;
+  public djOutro(secondsLeft: number): boolean {
+    if (!this.djTransitions || this.outroArmed || !this.ctx || !this.djFilter || !this.echoSend) return false;
     const t = this.ctx.currentTime; const length = Math.max(2, Math.min(10, secondsLeft));
     this.outroArmed = true;
     const f = this.djFilter.frequency; f.cancelScheduledValues(t); f.setValueAtTime(Math.max(20, f.value), t); f.exponentialRampToValueAtTime(650, t + length);
     const e = this.echoSend.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0.55, t + length);
     // If no new song is noticed (paused, or the queue ended), open the sound again anyway.
     window.setTimeout(() => { if (this.outroArmed) { this.lastTrackChange = -Infinity; this.djTrackChange(); } }, (length + 8) * 1000);
+    return true;
   }
 
   /**
    * A new song: the filter sweeps open from the bass up and the echo of the last song rings out,
    * while the room opens for a few seconds. Repeated signals within 8 s are one change.
    */
-  public djTrackChange() {
-    if (!this.ctx) return;
+  public djTrackChange(): boolean {
+    if (!this.ctx) return false;
     const t = this.ctx.currentTime;
-    if (t - this.lastTrackChange < 8) return;
+    if (t - this.lastTrackChange < 8) return false;
     this.lastTrackChange = t;
     const transitions = this.djTransitions && this.djFilter && this.echoSend;
     this.surround.newTrack(transitions ? 6 : 0);
-    if (!transitions) return;
+    this.onDjTransition?.();
+    if (!transitions) return true;
     const f = this.djFilter!.frequency; f.cancelScheduledValues(t);
     f.setValueAtTime(this.outroArmed ? Math.max(20, f.value) : 420, t); f.exponentialRampToValueAtTime(20, t + 2.5);
     const e = this.echoSend!.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0, t + 0.6);
     this.outroArmed = false;
+    return true;
   }
 
   /** Sub-bass impact in the surround renderer, 0–100. */

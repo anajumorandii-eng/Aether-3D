@@ -29,6 +29,13 @@ export class AutoMixer {
   private profile: Omit<TrackMetrics, 'level'> | null = null;
   private sinceTrack = 0;
   private silence = 0;
+  // Slow and fast views of the sound, to notice a different song when there is no silence between them.
+  private slow: TrackMetrics | null = null;
+  private fast: TrackMetrics | null = null;
+  private novelty = 0;
+  private sinceChange = 0;
+  /** Off when Spotify tells the song changes: then only a clear gap counts. */
+  detectNovelty = true;
 
   /** Feeds one analysis report; returns true when a new song seems to start after a gap. */
   update(m: TrackMetrics, dt = 0.25): boolean {
@@ -36,7 +43,17 @@ export class AutoMixer {
     if (m.level < SILENCE_DB) { this.silence += dt; return false; }
     if (this.silence >= 0.4 && m.level > RETURN_DB) { this.newTrack(); changed = true; }
     this.silence = 0;
-    this.sinceTrack += dt;
+    this.sinceTrack += dt; this.sinceChange += dt;
+    const follow = (prev: TrackMetrics | null, tau: number): TrackMetrics => {
+      if (!prev) return { ...m };
+      const k = 1 - Math.exp(-dt / tau);
+      return { center: prev.center + k * (m.center - prev.center), ambience: prev.ambience + k * (m.ambience - prev.ambience), bass: prev.bass + k * (m.bass - prev.bass), level: prev.level + k * (m.level - prev.level) };
+    };
+    this.slow = follow(this.slow, 12); this.fast = follow(this.fast, 1.2);
+    const d = Math.abs(this.fast.center - this.slow.center) * 2 + Math.abs(this.fast.ambience - this.slow.ambience) * 2 +
+      Math.abs(this.fast.bass - this.slow.bass) * 1.5 + Math.abs(this.fast.level - this.slow.level) / 12;
+    this.novelty = d > 0.35 ? this.novelty + dt : 0;
+    if (!changed && this.detectNovelty && this.novelty >= 2 && this.sinceChange >= 40) { this.newTrack(); changed = true; this.slow = { ...this.fast }; }
     // Learn the new song quickly for the first seconds, then follow it slowly.
     const tau = this.sinceTrack < 5 ? 1 : 4;
     const k = 1 - Math.exp(-dt / tau);
@@ -49,6 +66,6 @@ export class AutoMixer {
   }
 
   /** A new song: relearn it, starting from the previous song's mix so nothing jumps. */
-  newTrack() { this.profile = null; this.sinceTrack = 0; }
-  reset() { this.offsets = { focus: 0, amount: 0, punch: 0 }; this.newTrack(); this.silence = 0; }
+  newTrack() { this.profile = null; this.sinceTrack = 0; this.sinceChange = 0; this.novelty = 0; }
+  reset() { this.offsets = { focus: 0, amount: 0, punch: 0 }; this.newTrack(); this.silence = 0; this.slow = this.fast = null; }
 }

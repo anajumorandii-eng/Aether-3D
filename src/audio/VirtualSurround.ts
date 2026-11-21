@@ -71,7 +71,8 @@ export class VirtualSurround {
         const { generation, ...metrics } = event.data;
         if (generation !== this.generation) return;
         let gap = false;
-        if (this.active && this.autoMix) { gap = this.autoMixer.update(metrics); this.applyLevels(); }
+        // Song changes are watched whenever this route plays, even with per-song mixing off.
+        if (this.active) { gap = this.autoMixer.update(metrics); if (this.autoMix) this.applyLevels(); }
         this.analysis = { status: 'ready', ...metrics, offsets: this.autoMix ? { ...this.autoMixer.offsets } : undefined };
         if (gap) this.onTrackGap?.();
       };
@@ -165,6 +166,8 @@ export class VirtualSurround {
   setAmount(amount: number) { this.amount = Math.max(0, Math.min(1, amount)); this.applyLevels(); }
   setFocus(focus: number) { this.focus = Math.max(0, Math.min(1, focus)); this.applyLevels(); }
   setPunch(punch: number) { this.punch = Math.max(0, Math.min(1, punch)); this.applyLevels(); }
+  /** When Spotify reports song changes, the audio only counts a clear gap, not a change of character. */
+  setNoveltyDetection(enabled: boolean) { this.autoMixer.detectNovelty = enabled; }
   setAutoMix(enabled: boolean) { this.autoMix = enabled; if (!enabled) this.autoMixer.reset(); this.applyLevels(); }
   /** A new song is starting: relearn it and open the room for a moment. */
   newTrack(surgeSeconds = 0) {
