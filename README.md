@@ -137,3 +137,9 @@ Com **DJ ao vivo: mixar cada música** ligado, o passeio se adapta a cada músic
 - **No ritmo:** o processador mede o andamento (BPM) pelo fluxo espectral das batidas, com autocorrelação de 60 a 180 BPM nos últimos ~11 s. O giro trava num número inteiro de tempos por volta (4, 8, 16, 32 ou 64, para cair nos compassos), o mais próximo da velocidade escolhida. Sem batida clara, gira na velocidade escolhida.
 - **Em altura:** os alto-falantes também sobem e descem (meia volta por giro). Músicas com mais ambiência se movem mais.
 - **Voz que balança:** a voz próxima balança de leve entre os ouvidos (duas vezes por volta), sem sair da frente.
+
+### Imersão do 8D e modo Íntimo
+
+**Imersão do 8D** (0–100%) acrescenta uma camada de 8D clássico: a música inteira, com os graves fora, gira pela mesma rotação com panorâmica forte, mais escura e um pouco mais baixa por trás da cabeça. Ela é atrasada pela latência do upmix (2048 amostras) para ficar alinhada com o resto. Quanto mais imersão, mais as partes paradas (a voz fixa à frente, as frentes) recuam.
+
+O modo **Íntimo** é para ouvir só você e a música: voz no máximo de foco (próxima, quente, com presença e ar), um espaço grande e escuro ao redor (Catedral, envolvimento alto), um passeio lento e sutil (imersão 25%) e nenhum efeito de DJ entre as músicas.

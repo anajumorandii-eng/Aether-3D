@@ -74,6 +74,25 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     console.log('Passeio 8D locks to the song tempo (120 BPM, 16 beats per turn): OK');
     assert(walkRange.walkMin < 0.85 && walkRange.walkMax > 1.2, `with 8D it crosses to the right and back ${JSON.stringify(walkRange)}`);
     console.log('Passeio 8D: a left-only sound circles to the right ear and back: OK');
+    // Imersão do 8D: at 100 even a centered sound (like the voice) travels ear to ear; at 0 it stays centered.
+    const depth = await p.evaluate(async () => {
+      const ctx = engine.ctx; const other = new AudioContext(); const osc = other.createOscillator(); osc.frequency.value = 900;
+      const dest = other.createMediaStreamDestination(); osc.connect(dest); osc.start();
+      engine.setSurroundEnabled(true); engine.setAutoMix(false); await engine.attachStream(dest.stream);
+      const split = ctx.createChannelSplitter(2); engine.limiterNode.connect(split);
+      const aL = ctx.createAnalyser(), aR = ctx.createAnalyser(); split.connect(aL, 0); split.connect(aR, 1);
+      const rms = a => { const b = new Float32Array(a.fftSize); a.getFloatTimeDomainData(b); return Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length); };
+      const sample = async seconds => { const r = []; for (let i = 0; i < seconds * 10; i++) { await new Promise(x => setTimeout(x, 100)); r.push(rms(aL) / (rms(aR) + 1e-9)); } return r; };
+      engine.setWalkSpeed(100); engine.setWalkDepth(0); engine.setWalk(true); await new Promise(x => setTimeout(x, 800));
+      const still = await sample(6);
+      engine.setWalkDepth(100); await new Promise(x => setTimeout(x, 500));
+      const moving = await sample(7);
+      engine.setWalk(false); engine.setAutoMix(true); engine.detachStream(); other.close();
+      return { stillMin: Math.min(...still), stillMax: Math.max(...still), min: Math.min(...moving), max: Math.max(...moving) };
+    });
+    assert(depth.stillMax / depth.stillMin < 2.5, `depth 0 keeps a centered voice near the middle ${JSON.stringify(depth)}`);
+    assert(depth.min < 0.5 && depth.max > 2, `depth 100 sends a centered sound ear to ear ${JSON.stringify(depth)}`);
+    console.log('Imersão do 8D: centered sound stays put at 0 and travels ear to ear at 100: OK');
 
     // Live stream through the same chain (stands in for a captured tab or a virtual cable).
     await p.evaluate(async () => {
@@ -133,6 +152,11 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     assert.equal(await p.getByRole('switch', { name: 'Transições de DJ' }).getAttribute('aria-checked'), 'false');
     await p.getByText(/^Nesta música: Voz/).waitFor({ timeout: 15000 });
     console.log('DJ 3D: full immersion with voice focus and bass impact: OK');
+    await p.getByRole('button', { name: 'Íntimo', exact: true }).click();
+    assert.equal(await p.getByRole('slider', { name: 'Voz à frente', exact: true }).inputValue(), '100');
+    assert.equal(await p.getByRole('slider', { name: 'Imersão do 8D', exact: true }).inputValue(), '25');
+    assert.equal(await p.getByRole('switch', { name: 'Transições de DJ' }).getAttribute('aria-checked'), 'false', 'no DJ effects in the intimate mode');
+    console.log('Íntimo: close voice, gentle slow movement, no DJ effects: OK');
 
     for (const width of [320, 390, 768, 1440]) { await p.setViewportSize({ width, height: 900 }); assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `no horizontal scroll at ${width}`); }
     await p.setViewportSize({ width: 390, height: 844 });

@@ -3,7 +3,7 @@ import { SPEAKERS, type SurroundAnalysis } from '../audio/VirtualSurround';
 import { Range, Toggle } from './ui';
 
 /** Cinema 7.1: seven virtual speakers around the head, the voice isolated in front. */
-export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status, log, onTest, walk, walkSpeed, onWalk, onWalkSpeed }: {
+export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status, log, onTest, walk, walkSpeed, onWalk, onWalkSpeed, walkDepth, onWalkDepth }: {
   readAnalysis: () => SurroundAnalysis | null; playing: boolean; enabled: boolean;
   amount: number; focus: number; punch: number; onAmount: (value: number) => void; onFocus: (value: number) => void; onPunch: (value: number) => void;
   autoMix: boolean; onAutoMix: (enabled: boolean) => void; transitions: boolean; onTransitions: (enabled: boolean) => void;
@@ -11,6 +11,7 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
   status?: string | null;
   log?: { at: string; text: string }[]; onTest?: () => void;
   walk: boolean; walkSpeed: number; onWalk: (enabled: boolean) => void; onWalkSpeed: (value: number) => void;
+  walkDepth: number; onWalkDepth: (value: number) => void;
 }) {
   const [analysis, setAnalysis] = useState<SurroundAnalysis | null>(null);
   useEffect(() => { const read = () => setAnalysis(readAnalysis()); read(); const timer = window.setInterval(read, 400); return () => clearInterval(timer); }, [readAnalysis]);
@@ -44,6 +45,8 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
     <div className="mt-4"><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Impacto dos graves</span><span>{punch}%</span></div><Range label="Impacto dos graves" min={0} max={100} step={1} value={punch} onChange={onPunch} disabled={!enabled || unavailable} /></div>
     <div className="mt-5 border-t border-line-strong pt-4 space-y-3">
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Passeio 8D: o som gira ao redor da cabeça</span><Toggle checked={walk} onChange={onWalk} label="Passeio 8D" /></div>
+      {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Imersão do 8D</span><span>{walkDepth}%</span></div><Range label="Imersão do 8D" min={0} max={100} step={1} value={walkDepth} onChange={onWalkDepth} disabled={!enabled || unavailable} />
+        <p className="text-xs text-ink-muted mt-2 mb-4">{walkDepth >= 60 ? 'A música inteira passa de um ouvido para o outro e fica mais abafada por trás. Os graves ficam no centro.' : 'Giram os instrumentos e a ambiência. A voz fica mais parada à frente.'}</p></div>}
       {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Velocidade do passeio</span><span>uma volta a cada {period.toFixed(1).replace('.', ',')} s</span></div><Range label="Velocidade do passeio" min={0} max={100} step={1} value={walkSpeed} onChange={onWalkSpeed} disabled={!enabled || unavailable} />
         <p className="text-xs text-ink-muted mt-2">{plan?.beats ? `No ritmo da música: ${Math.round(analysis?.bpm ?? 0)} BPM · 1 volta a cada ${plan.beats} tempos, subindo e descendo` : autoMix ? 'Procurando a batida da música… até lá, gira na velocidade escolhida.' : 'Velocidade fixa. Ligue “DJ ao vivo: mixar cada música” para o giro seguir o ritmo.'}</p></div>}
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>DJ ao vivo: mixar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="DJ ao vivo: mixar cada música" /></div>

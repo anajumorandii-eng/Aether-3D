@@ -28,6 +28,8 @@ export const SPEAKERS = [
 
 // Seven speakers plus the voice and bass boosts add up: keep headroom so the limiter rarely works.
 const OUTPUT_TRIM = 0.6;
+/** Fixed delay of the upmix processor (its FFT size), in samples. */
+const UPMIX_LATENCY = 2048;
 
 /**
  * Stereo -> virtual 7.1 -> binaural. An AudioWorklet splits the mix into front, center, ambience and
@@ -55,6 +57,9 @@ export class VirtualSurround {
   private swayOsc: OscillatorNode | null = null;
   private swayMix: GainNode | null = null;
   private plan: WalkPlan = walkPlan(18, 0, 0, 0);
+  /** 0–1: how much of the song joins the classic 8D layer (the whole mix circling, strongly panned). */
+  private walkDepth = 0.7;
+  private classicGain: GainNode | null = null;
   private autoMix = true;
   private surgeStart = 0;
   private surgeLength = 0;
@@ -173,6 +178,23 @@ export class VirtualSurround {
       split.connect(reflections, 0); split.connect(reflections, 1);
       reflections.connect(this.reflectionGain); this.reflectionGain.connect(trim);
 
+      // Classic 8D layer: the whole mix (bass kept out) is panned around by the same rotation, darker and
+      // a little quieter behind the head. Generic HRTFs lateralise gently; this gives the strong
+      // ear-to-ear movement people know as 8D. Delayed by the upmix latency so the layers stay aligned.
+      const mono = ctx.createGain(); mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
+      const align = ctx.createDelay(0.2); align.delayTime.value = UPMIX_LATENCY / ctx.sampleRate;
+      const lowCut = ctx.createBiquadFilter(); lowCut.type = 'highpass'; lowCut.frequency.value = 150; lowCut.Q.value = 0.6;
+      const behind = ctx.createBiquadFilter(); behind.type = 'lowpass'; behind.frequency.value = 7000; behind.Q.value = 0.5;
+      const distance = ctx.createGain(); distance.gain.value = 0.85;
+      const pan = ctx.createStereoPanner(); pan.pan.value = 0;
+      this.classicGain = ctx.createGain(); this.classicGain.gain.value = 0;
+      source.connect(mono); mono.connect(align); align.connect(lowCut); lowCut.connect(behind); behind.connect(distance);
+      distance.connect(pan); pan.connect(this.classicGain); this.classicGain.connect(trim);
+      // sin θ → left/right; cos θ → in front (bright, full) or behind (darker, quieter).
+      const panDepth = ctx.createGain(); panDepth.gain.value = 0.95; walkSin.connect(panDepth); panDepth.connect(pan.pan);
+      const darkDepth = ctx.createGain(); darkDepth.gain.value = 3500; walkCos.connect(darkDepth); darkDepth.connect(behind.frequency);
+      const levelDepth = ctx.createGain(); levelDepth.gain.value = 0.15; walkCos.connect(levelDepth); levelDepth.connect(distance.gain);
+
       this.applyLevels(true);
       this.applyWalk(true);
       this.analysis.status = 'ready';
@@ -192,11 +214,15 @@ export class VirtualSurround {
     const surge = this.surgeLength > 0 ? 0.3 * Math.max(0, 1 - (ctx.currentTime - this.surgeStart) / this.surgeLength) : 0;
     const focus = clamp01(this.focus + o.focus); const amount = clamp01(this.amount + o.amount + surge); const punch = clamp01(this.punch + o.punch);
     // Voice focus: up to about +5.5 dB overall, mostly on the close path, with presence at 3.2 kHz.
-    const voice = 1 + 0.9 * focus; const close = 0.2 + 0.8 * focus;
+    // While the classic 8D layer plays, the still parts step back so the movement is what you hear.
+    const classic = this.walk ? this.walkDepth : 0;
+    const still = 1 - 0.65 * classic;
+    if (this.classicGain) set(this.classicGain, 1.1 * classic);
+    const voice = (1 + 0.9 * focus) * still; const close = 0.2 + 0.8 * focus;
     set(this.centerClose, voice * close);
     set(this.centerGain, voice * (1 - close) * 1.1);
     param(this.presence.gain, 3 * focus);
-    this.frontGains.forEach(g => set(g, 1 - 0.3 * focus));
+    this.frontGains.forEach(g => set(g, (1 - 0.3 * focus) * (1 - 0.4 * classic)));
     this.sideGains.forEach(g => set(g, 0.55 + 0.75 * amount));
     this.backGains.forEach(g => set(g, 0.45 + 0.7 * amount));
     // Bass impact: a sub shelf up to +7 dB and a little more level, outside the HRTF stage.
@@ -212,9 +238,11 @@ export class VirtualSurround {
   setFocus(focus: number) { this.focus = Math.max(0, Math.min(1, focus)); this.applyLevels(); }
   setPunch(punch: number) { this.punch = Math.max(0, Math.min(1, punch)); this.applyLevels(); }
   /** Passeio 8D: instruments and ambience circle the head; the voice stays in front. */
-  setWalk(enabled: boolean) { this.walk = enabled; this.applyWalk(); }
+  setWalk(enabled: boolean) { this.walk = enabled; this.applyWalk(); this.applyLevels(); }
   /** 0–1: one turn every 30 s (slow) to every 6 s (fast). */
   setWalkSpeed(speed: number) { this.walkSpeed = Math.max(0, Math.min(1, speed)); this.applyWalk(); }
+  /** 0–1: from instruments circling (0) to the whole song circling ear to ear (1). */
+  setWalkDepth(depth: number) { this.walkDepth = Math.max(0, Math.min(1, depth)); this.applyLevels(); }
   private applyWalk(immediate = false) {
     const ctx = this.ctx; if (!ctx || this.walkMix.length < 2) return;
     const t = ctx.currentTime; const m = this.walk ? 1 : 0; const tau = immediate ? 0.001 : 0.5;

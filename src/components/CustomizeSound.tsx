@@ -35,6 +35,8 @@ interface Props {
   onWalk: (enabled: boolean) => void;
   walkSpeed: number;
   onWalkSpeed: (value: number) => void;
+  walkDepth: number;
+  onWalkDepth: (value: number) => void;
   position: { x: number; z: number };
   onPosition: (position: { x: number; z: number }) => void;
   elevation: number;
@@ -69,6 +71,7 @@ export function CustomizeSound(p: Props) {
           <p className="text-xs text-ink-muted">O modo noturno comprime os picos. Desligar o 3D mantém o estéreo. A adaptação preserva o centro da mixagem, sem rotação. O Cinema 7.1 tem prioridade sobre a adaptação e o posicionamento manual.</p>
           <Field label="Voz à frente" value={`${p.voiceFocus}%`}><Range label="Voz à frente personalizada" min={0} max={100} step={1} value={p.voiceFocus} onChange={p.onVoiceFocus} disabled={!p.spatial || !p.surround} /></Field>
           <Field label="Impacto dos graves" value={`${p.bassPunch}%`}><Range label="Impacto dos graves personalizado" min={0} max={100} step={1} value={p.bassPunch} onChange={p.onBassPunch} disabled={!p.spatial || !p.surround} /></Field>
+          <Field label="Imersão do 8D" value={`${p.walkDepth}%`}><Range label="Imersão do 8D personalizada" min={0} max={100} step={1} value={p.walkDepth} onChange={p.onWalkDepth} disabled={!p.spatial || !p.surround || !p.walk} /></Field>
           <Field label="Velocidade do passeio 8D" value={`${p.walkSpeed}%`}><Range label="Velocidade do passeio personalizada" min={0} max={100} step={1} value={p.walkSpeed} onChange={p.onWalkSpeed} disabled={!p.spatial || !p.surround || !p.walk} /></Field>
           <Field label="Envolvimento" value={`${p.surroundAmount}%`}><Range label="Envolvimento personalizado" min={0} max={100} step={1} value={p.surroundAmount} onChange={p.onSurroundAmount} disabled={!p.spatial || !p.surround} /></Field>
           <Field label="Intensidade da adaptação" value={`${p.adaptiveIntensity}%`}><Range label="Intensidade adaptativa personalizada" min={0} max={100} step={1} value={p.adaptiveIntensity} onChange={p.onAdaptiveIntensity} disabled={!p.spatial || p.surround || !p.adaptive} /></Field>

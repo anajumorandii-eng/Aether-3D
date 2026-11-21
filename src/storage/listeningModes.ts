@@ -20,7 +20,7 @@ export function validCustomMode(v: unknown): v is ListeningMode {
     (m.adaptive === undefined || typeof m.adaptive === 'boolean') && (m.adaptiveIntensity === undefined || between(m.adaptiveIntensity, 0, 100)) &&
     (m.surround === undefined || typeof m.surround === 'boolean') && (m.surroundAmount === undefined || between(m.surroundAmount, 0, 100)) &&
     (m.voiceFocus === undefined || between(m.voiceFocus, 0, 100)) && (m.bassPunch === undefined || between(m.bassPunch, 0, 100)) &&
-    (m.walk8d === undefined || typeof m.walk8d === 'boolean') && (m.walkSpeed === undefined || between(m.walkSpeed, 0, 100));
+    (m.walk8d === undefined || typeof m.walk8d === 'boolean') && (m.walkSpeed === undefined || between(m.walkSpeed, 0, 100)) && (m.walkDepth === undefined || between(m.walkDepth, 0, 100)) && (m.djTransitions === undefined || typeof m.djTransitions === 'boolean');
 }
 
 export function loadCustomModes(): ListeningMode[] {

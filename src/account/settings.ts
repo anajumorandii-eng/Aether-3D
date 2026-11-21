@@ -14,6 +14,7 @@ export interface SoundSettings {
   bassPunch?: number;
   walk8d?: boolean;
   walkSpeed?: number;
+  walkDepth?: number;
   autoMix?: boolean;
   djTransitions?: boolean;
   gains: number[];
@@ -35,7 +36,7 @@ export function parseSound(raw: string): SoundSettings {
   const s = JSON.parse(raw) as SoundSettings;
   if (!s || (s.adaptive !== undefined && typeof s.adaptive !== 'boolean') || (s.adaptiveIntensity !== undefined && !between(s.adaptiveIntensity, 0, 100)) ||
     (s.surround !== undefined && typeof s.surround !== 'boolean') || (s.surroundAmount !== undefined && !between(s.surroundAmount, 0, 100)) || (s.voiceFocus !== undefined && !between(s.voiceFocus, 0, 100)) || (s.bassPunch !== undefined && !between(s.bassPunch, 0, 100)) ||
-    (s.walk8d !== undefined && typeof s.walk8d !== 'boolean') || (s.walkSpeed !== undefined && !between(s.walkSpeed, 0, 100)) ||
+    (s.walk8d !== undefined && typeof s.walk8d !== 'boolean') || (s.walkSpeed !== undefined && !between(s.walkSpeed, 0, 100)) || (s.walkDepth !== undefined && !between(s.walkDepth, 0, 100)) ||
     (s.autoMix !== undefined && typeof s.autoMix !== 'boolean') || (s.djTransitions !== undefined && typeof s.djTransitions !== 'boolean') || (s.djIntensity !== undefined && !between(s.djIntensity, 0, 100)) || (s.modeId !== undefined && (typeof s.modeId !== 'string' || s.modeId.length > 100)) || !Array.isArray(s.gains) || s.gains.length !== 10 || !s.gains.every(g => between(g, -12, 12)) ||
     typeof s.preset !== 'string' || s.preset.length > 80 || !['off','studio','hall','cathedral'].includes(s.room) ||
     !between(s.mix, 0, 1) || !between(s.speed, 0.2, 2) || !between(s.elevation, -1, 1) ||

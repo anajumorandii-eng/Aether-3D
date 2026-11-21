@@ -24,6 +24,10 @@ export interface ListeningMode {
   /** Passeio 8D: instruments and ambience circle the head, the voice stays in front. */
   walk8d?: boolean;
   walkSpeed?: number;
+  /** How much of the song circles in 8D: instruments only (0) to the whole song ear to ear (100). */
+  walkDepth?: number;
+  /** DJ effects between songs (echo out, filter in). Left out: the current setting is kept. */
+  djTransitions?: boolean;
 }
 
 const base = { room: 'off' as RoomType, mix: 0, orbit: false, speed: 0.35, position: { x: 0, z: -0.35 }, elevation: 0, spatial: false, night: false };
@@ -44,13 +48,16 @@ export function createDjMode(value: number): ListeningMode {
     room: 'hall', mix: Number((0.28 * strength).toFixed(3)),
     spatial: true, adaptive: true, adaptiveIntensity: intensity, orbit: false,
     surround: true, surroundAmount: Math.round(55 + 0.45 * intensity), voiceFocus: Math.round(70 + 0.3 * intensity), bassPunch: intensity,
-    walk8d: intensity >= 50, walkSpeed: Math.round(20 + 0.3 * intensity),
+    walk8d: intensity >= 50, walkSpeed: Math.round(20 + 0.3 * intensity), walkDepth: Math.round(50 + 0.5 * intensity),
     position: { x: 0, z: -0.5 },
   };
 }
 
 // Profiles use this app's DSP; these are not Boom 3D's proprietary algorithms.
 export const LISTENING_MODES: ListeningMode[] = [
+  // Only you and the song: the voice close, inside the head, warm and detailed (breath, texture); the
+  // music a large, soft, dark space around it that breathes slowly. Nothing that calls attention to itself.
+  { ...base, id: 'intimo', name: 'Íntimo', description: 'Só você e a música: a voz perto, dentro de você, e um espaço grande e macio ao redor, respirando devagar.', eq: { name: 'Íntimo', gains: [2, 2, 1, 0, -1, 0, 1, 2, 3, 3] }, room: 'cathedral', mix: 0.3, position: { x: 0, z: -0.7 }, spatial: true, adaptive: true, adaptiveIntensity: 65, surround: true, surroundAmount: 85, voiceFocus: 100, bassPunch: 35, walk8d: true, walkSpeed: 0, walkDepth: 25, djTransitions: false },
   { ...base, id: 'cinema', name: 'Cinema 7.1', description: 'Voz isolada no centro, à frente. Ambiência em alto-falantes virtuais nas laterais e atrás.', eq: { name: 'Cinema 7.1', gains: [3, 2, 0, -1, 0, 0, 1, 1, 2, 1] }, room: 'studio', mix: 0.15, position: { x: 0, z: -0.7 }, spatial: true, adaptive: true, adaptiveIntensity: 65, surround: true, surroundAmount: 70, voiceFocus: 80, bassPunch: 30 },
   { ...base, id: 'immersive', name: 'Som 3D', description: 'Abertura e ambiência ajustadas ao estéreo, aos graves e à dinâmica da faixa.', eq: EQ_PRESETS[0], room: 'studio', mix: 0.2, orbit: false, position: { x: 0, z: -0.7 }, spatial: true, adaptive: true, adaptiveIntensity: 65 },
   { ...base, id: 'ambience', name: 'Ambiência', description: 'Reverberação de teatro para dar profundidade ao estéreo, sem órbita.', eq: EQ_PRESETS[0], room: 'hall', mix: 0.35 },
@@ -63,5 +70,5 @@ export const LISTENING_MODES: ListeningMode[] = [
 
 /** Upgrade old rotating presets without discarding a user's EQ or room settings. */
 export function upgradeListeningMode(mode: ListeningMode): ListeningMode {
-  return { ...mode, orbit: false, surround: mode.surround ?? false, surroundAmount: mode.surroundAmount ?? 70, voiceFocus: mode.voiceFocus ?? 70, bassPunch: mode.bassPunch ?? 30, walk8d: mode.walk8d ?? false, walkSpeed: mode.walkSpeed ?? 40, adaptive: mode.adaptive ?? (mode.orbit || mode.id === 'immersive' || mode.id === 'dj' || mode.djIntensity !== undefined), adaptiveIntensity: mode.adaptiveIntensity ?? mode.djIntensity ?? 65 };
+  return { ...mode, orbit: false, surround: mode.surround ?? false, surroundAmount: mode.surroundAmount ?? 70, voiceFocus: mode.voiceFocus ?? 70, bassPunch: mode.bassPunch ?? 30, walk8d: mode.walk8d ?? false, walkSpeed: mode.walkSpeed ?? 40, walkDepth: mode.walkDepth ?? 70, adaptive: mode.adaptive ?? (mode.orbit || mode.id === 'immersive' || mode.id === 'dj' || mode.djIntensity !== undefined), adaptiveIntensity: mode.adaptiveIntensity ?? mode.djIntensity ?? 65 };
 }
