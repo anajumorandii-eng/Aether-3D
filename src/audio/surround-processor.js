@@ -17,6 +17,9 @@ const HOP = 512;
 const BINS = N / 2 + 1;
 const CHANNELS = 7;
 const OLA_SCALE = 1 / 1.5; // Hann x Hann at 75% overlap sums to 1.5.
+// Tempo: an onset-strength curve (spectral flux) over the last ~11 s, autocorrelated once a second.
+const ONSET_LEN = 1024;
+const FLUX_MAX_HZ = 6000;
 
 class SurroundUpmixProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -62,6 +65,9 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     this.pLRr = new Float32Array(BINS); this.pLRi = new Float32Array(BINS);
     this.centerMask = new Float32Array(BINS); this.ambienceMask = new Float32Array(BINS);
     this.rawCenter = new Float32Array(BINS); this.rawAmbience = new Float32Array(BINS); this.scratch = new Float32Array(BINS);
+    this.prevLog = new Float32Array(BINS); this.onset = new Float32Array(ONSET_LEN);
+    this.fluxBins = Math.min(BINS, Math.ceil((FLUX_MAX_HZ * N) / sampleRate));
+    this.frameRate = sampleRate / HOP;
     this.generation = 0;
     this.active = true;
     this.reset();
@@ -80,6 +86,41 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     this.centerMask.fill(0); this.ambienceMask.fill(0);
     this.position = 0; this.frames = 0; this.postFrames = 0;
     this.energyIn = 0; this.energyCenter = 0; this.energyAmbience = 0; this.energyBass = 0; this.windowSquares = 0; this.windowCount = 0;
+    this.prevLog.fill(0); this.onset.fill(0); this.onsetPos = 0; this.onsetCount = 0; this.flux = 0;
+    this.bpm = 0; this.beatConfidence = 0;
+  }
+
+  /** Autocorrelation of the onset curve for 60–180 BPM, preferring tempos near 120. */
+  estimateTempo() {
+    const len = Math.min(this.onsetCount, ONSET_LEN);
+    if (len < this.frameRate * 5) return;
+    const x = this.scratchOnset ?? (this.scratchOnset = new Float32Array(ONSET_LEN));
+    let mean = 0;
+    // A beat rarely lands on a whole number of frames: smooth the curve so its peaks still line up.
+    const at = (i) => this.onset[(this.onsetPos - len + Math.max(0, Math.min(len - 1, i)) + ONSET_LEN) % ONSET_LEN];
+    for (let i = 0; i < len; i++) { const v = 0.25 * at(i - 1) + 0.5 * at(i) + 0.25 * at(i + 1); x[i] = v; mean += v; }
+    mean /= len;
+    let energy = 0;
+    for (let i = 0; i < len; i++) { x[i] -= mean; energy += x[i] * x[i]; }
+    if (energy < 1e-9) { this.beatConfidence = 0; return; }
+    const minLag = Math.floor((this.frameRate * 60) / 180); const maxLag = Math.ceil((this.frameRate * 60) / 60);
+    const ac = (lag) => { let sum = 0; for (let i = lag; i < len; i++) sum += x[i] * x[i - lag]; return sum / (len - lag); };
+    let best = -Infinity; let bestLag = 0; const scores = [];
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      const bpm = (this.frameRate * 60) / lag;
+      const prior = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 120) / 0.9, 2));
+      const score = ac(lag) * prior; // A periodic beat peaks equally at the tempo and half of it: the prior picks.
+      scores[lag] = score;
+      if (score > best) { best = score; bestLag = lag; }
+    }
+    // Parabolic refinement between neighbouring lags.
+    const a = scores[bestLag - 1] ?? best; const c = scores[bestLag + 1] ?? best;
+    const denom = a - 2 * best + c; const shift = denom < 0 ? 0.5 * (a - c) / denom : 0;
+    const bpm = (this.frameRate * 60) / (bestLag + Math.max(-0.5, Math.min(0.5, shift)));
+    const confidence = Math.max(0, Math.min(1, ac(bestLag) / (energy / len)));
+    // Follow gently: a tempo that holds becomes the answer, one odd second does not.
+    this.bpm = this.bpm > 0 && Math.abs(bpm - this.bpm) < 6 ? this.bpm + 0.3 * (bpm - this.bpm) : bpm;
+    this.beatConfidence = this.beatConfidence + 0.4 * (confidence - this.beatConfidence);
   }
 
   fft(re, im) {
@@ -168,6 +209,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       if (k === 0 || k === N / 2) for (const s of this.spec) s.im[k] = 0;
       this.energyIn += ll + rrE;
       this.energyBass += bass * (ll + rrE);
+      if (k < this.fluxBins) { const lg = Math.log1p(100 * (Math.sqrt(ll) + Math.sqrt(rrE))); const d = lg - this.prevLog[k]; if (d > 0) this.flux += d; this.prevLog[k] = lg; }
       this.energyCenter += 2 * (cr * cr + ci * ci);
       this.energyAmbience += ma * (l1r * l1r + l1i * l1i + r1r * r1r + r1i * r1i);
     }
@@ -178,6 +220,8 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       this.ready[c].set(acc.subarray(0, HOP));
       acc.copyWithin(0, HOP); acc.fill(0, N - HOP);
     }
+    this.onset[this.onsetPos] = this.flux; this.onsetPos = (this.onsetPos + 1) % ONSET_LEN; this.onsetCount++; this.flux = 0;
+    if (this.onsetCount % Math.round(this.frameRate) === 0) this.estimateTempo();
     this.frames++;
   }
 
@@ -228,7 +272,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       const total = this.energyIn + 1e-20;
       // level: input loudness of the last 250 ms in dBFS, used to notice the gap between songs.
       const level = 10 * Math.log10(this.windowSquares / Math.max(1, this.windowCount) + 1e-12);
-      this.port.postMessage({ generation: this.generation, center: this.energyCenter / total, ambience: this.energyAmbience / total, bass: this.energyBass / total, level, frames: this.frames * HOP });
+      this.port.postMessage({ generation: this.generation, center: this.energyCenter / total, ambience: this.energyAmbience / total, bass: this.energyBass / total, level, bpm: this.bpm, beatConfidence: this.beatConfidence, frames: this.frames * HOP });
       this.energyIn *= 0.5; this.energyCenter *= 0.5; this.energyAmbience *= 0.5; this.energyBass *= 0.5;
       this.windowSquares = 0; this.windowCount = 0;
     }

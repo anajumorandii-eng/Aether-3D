@@ -15,6 +15,8 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
   const [analysis, setAnalysis] = useState<SurroundAnalysis | null>(null);
   useEffect(() => { const read = () => setAnalysis(readAnalysis()); read(); const timer = window.setInterval(read, 400); return () => clearInterval(timer); }, [readAnalysis]);
   const unavailable = analysis?.status === 'error' || analysis?.status === 'unsupported';
+  const plan = analysis?.walk;
+  const period = plan?.period ?? 30 - 0.24 * walkSpeed;
   const measured = enabled && playing && analysis?.status === 'ready' && analysis.frames > 0;
   // Speaker brightness follows how much of the music each group is receiving.
   const level = (id: string) => !measured ? 0.35 : id === 'C' ? 0.35 + Math.min(0.65, analysis.center * 1.6) : id.startsWith('F') ? 0.75 : 0.35 + Math.min(0.65, analysis.ambience * 2.2);
@@ -27,7 +29,7 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
         return <span key={s.id} className="absolute -translate-x-1/2 -translate-y-1/2 font-mono text-[10px] text-accent transition-opacity duration-500"
           style={{ left: `calc(50% + ${Math.sin(rad) * 70}px)`, top: `calc(50% - ${Math.cos(rad) * 62}px)`, opacity: level(s.id) }}>{s.id}</span>;
       })}
-      {walk && <div className="absolute inset-0 motion-safe:animate-spin" style={{ animationDuration: `${Math.round(30 - 0.24 * walkSpeed)}s` }}>
+      {walk && <div className="absolute inset-0 motion-safe:animate-spin" style={{ animationDuration: `${period.toFixed(1)}s` }}>
         {SPEAKERS.filter(s => s.id !== 'C').map(s => {
           const rad = (s.azimuth * Math.PI) / 180;
           return <span key={s.id} className="absolute -translate-x-1/2 -translate-y-1/2 font-mono text-[10px] text-accent"
@@ -42,7 +44,8 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
     <div className="mt-4"><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Impacto dos graves</span><span>{punch}%</span></div><Range label="Impacto dos graves" min={0} max={100} step={1} value={punch} onChange={onPunch} disabled={!enabled || unavailable} /></div>
     <div className="mt-5 border-t border-line-strong pt-4 space-y-3">
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Passeio 8D: o som gira ao redor da cabeça</span><Toggle checked={walk} onChange={onWalk} label="Passeio 8D" /></div>
-      {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Velocidade do passeio</span><span>uma volta a cada {Math.round(30 - 0.24 * walkSpeed)} s</span></div><Range label="Velocidade do passeio" min={0} max={100} step={1} value={walkSpeed} onChange={onWalkSpeed} disabled={!enabled || unavailable} /></div>}
+      {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Velocidade do passeio</span><span>uma volta a cada {period.toFixed(1).replace('.', ',')} s</span></div><Range label="Velocidade do passeio" min={0} max={100} step={1} value={walkSpeed} onChange={onWalkSpeed} disabled={!enabled || unavailable} />
+        <p className="text-xs text-ink-muted mt-2">{plan?.beats ? `No ritmo da música: ${Math.round(analysis?.bpm ?? 0)} BPM · 1 volta a cada ${plan.beats} tempos, subindo e descendo` : autoMix ? 'Procurando a batida da música… até lá, gira na velocidade escolhida.' : 'Velocidade fixa. Ligue “DJ ao vivo: mixar cada música” para o giro seguir o ritmo.'}</p></div>}
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>DJ ao vivo: mixar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="DJ ao vivo: mixar cada música" /></div>
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Transições de DJ</span><Toggle checked={transitions} onChange={onTransitions} label="Transições de DJ" /></div>
       {transitions && status && <p role="status" className="text-xs text-ink-muted">{status}</p>}

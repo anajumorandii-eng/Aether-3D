@@ -69,3 +69,21 @@ assert(Object.values(off.energy).every(e => e === 0));
 p.port.onmessage({ data: { type: 'reset', generation: 3 } });
 assert.equal(p.frames, 0); assert(p.accum.every(a => a.every(v => v === 0)));
 console.log('Surround DSP: voice to center, panned content to fronts, diffuse to surrounds, bass split, exact reconstruction, focus control, silence, inactive bypass and reset: OK');
+
+// Tempo: a kick-and-hat pattern at known tempos is measured within 2 BPM.
+for (const bpm of [128, 92, 150]) {
+  const beat = Math.round(SR * 60 / bpm);
+  let s2 = 3; const rnd = () => { s2 = (s2 * 1664525 + 1013904223) >>> 0; return s2 / 2 ** 31 - 1; };
+  const tempo = render(n => {
+    const t = n % beat; const kick = t < 2400 ? Math.sin(2 * Math.PI * 60 * t / SR) * Math.exp(-t / 600) * 0.6 : 0;
+    const h = (n + beat / 2) % beat; const hat = h < 600 ? rnd() * Math.exp(-h / 120) * 0.2 : 0;
+    const pad = 0.05 * wave(330, n);
+    return [kick + hat + pad, kick + hat + pad];
+  }, { seconds: 12 });
+  const last = tempo.p.port.messages.at(-1);
+  assert(Math.abs(last.bpm - bpm) < 2, `tempo ${bpm} measured as ${last.bpm}`);
+  assert(last.beatConfidence > 0.2, `confident beat at ${bpm}: ${last.beatConfidence}`);
+}
+const noBeat = render(() => [0.2 * noise(), 0.2 * noise()], { seconds: 8 });
+assert(noBeat.p.port.messages.at(-1).beatConfidence < 0.2, 'steady noise has no beat');
+console.log('Tempo tracking: 128, 92 and 150 BPM measured within 2 BPM; no beat in steady noise: OK');

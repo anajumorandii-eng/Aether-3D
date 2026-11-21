@@ -1,4 +1,4 @@
-import { AutoMixer, type MixOffsets } from './autoMix';
+import { AutoMixer, walkPlan, type MixOffsets, type WalkPlan } from './autoMix';
 
 export interface SurroundAnalysis {
   status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
@@ -12,6 +12,11 @@ export interface SurroundAnalysis {
   level?: number;
   /** Live DJ adjustment for the current song, as fractions added to each setting. */
   offsets?: MixOffsets;
+  /** Measured tempo and how sure the measure is, 0–1. */
+  bpm?: number;
+  beatConfidence?: number;
+  /** How the 8D walk is moving for this song, when it is on. */
+  walk?: WalkPlan;
   frames: number;
 }
 
@@ -45,6 +50,11 @@ export class VirtualSurround {
   private walkMix: GainNode[] = [];
   private walkOscillators: OscillatorNode[] = [];
   private walkStatic: { panner: PannerNode; x: number; z: number }[] = [];
+  private elevationOsc: OscillatorNode | null = null;
+  private elevationMix: GainNode | null = null;
+  private swayOsc: OscillatorNode | null = null;
+  private swayMix: GainNode | null = null;
+  private plan: WalkPlan = walkPlan(18, 0, 0, 0);
   private autoMix = true;
   private surgeStart = 0;
   private surgeLength = 0;
@@ -82,6 +92,8 @@ export class VirtualSurround {
         // Song changes are watched whenever this route plays, even with per-song mixing off.
         if (this.active) { gap = this.autoMixer.update(metrics); if (this.autoMix) this.applyLevels(); }
         this.analysis = { status: 'ready', ...metrics, offsets: this.autoMix ? { ...this.autoMixer.offsets } : undefined };
+        if (this.active && this.walk) this.applyWalk();
+        this.analysis.walk = this.walk ? { ...this.plan } : undefined;
         if (gap) this.onTrackGap?.();
       };
       node.onprocessorerror = () => { this.analysis.status = 'error'; this.onFailure(); };
@@ -97,7 +109,12 @@ export class VirtualSurround {
       const walkCos = ctx.createGain(); const walkSin = ctx.createGain(); walkCos.gain.value = walkSin.gain.value = 0;
       cos.connect(walkCos); sin.connect(walkSin);
       this.walkOscillators = [cos, sin]; this.walkMix = [walkCos, walkSin];
-      const start = ctx.currentTime + 0.05; cos.start(start); sin.start(start);
+      // Up and down (half the turn rate), and a gentle left-right sway of the close voice (twice per turn).
+      this.elevationOsc = ctx.createOscillator(); this.elevationMix = ctx.createGain(); this.elevationMix.gain.value = 0;
+      this.elevationOsc.connect(this.elevationMix);
+      this.swayOsc = ctx.createOscillator(); this.swayMix = ctx.createGain(); this.swayMix.gain.value = 0;
+      this.swayOsc.connect(this.swayMix);
+      const start = ctx.currentTime + 0.05; cos.start(start); sin.start(start); this.elevationOsc.start(start); this.swayOsc.start(start);
       const speaker = (azimuth: number, rotates = true) => {
         const panner = ctx.createPanner();
         panner.panningModel = 'HRTF';
@@ -112,6 +129,7 @@ export class VirtualSurround {
           ([[walkCos, panner.positionX, sa], [walkSin, panner.positionX, ca], [walkCos, panner.positionZ, -ca], [walkSin, panner.positionZ, sa]] as const)
             .forEach(([source, target, k]) => { const g = ctx.createGain(); g.gain.value = k; source.connect(g); g.connect(target); });
           this.walkStatic.push({ panner, x: sa, z: -ca });
+          this.elevationMix?.connect(panner.positionY);
         }
         const gain = ctx.createGain(); gain.connect(panner); panner.connect(trim);
         return gain;
@@ -125,7 +143,9 @@ export class VirtualSurround {
       // ears: close, "in your face", the way a DJ or club mix presents it.
       this.presence = ctx.createBiquadFilter(); this.presence.type = 'peaking';
       this.presence.frequency.value = 3200; this.presence.Q.value = 0.9;
-      this.centerClose = ctx.createGain(); this.centerClose.connect(trim);
+      this.centerClose = ctx.createGain();
+      const sway = ctx.createStereoPanner(); this.swayMix?.connect(sway.pan);
+      this.centerClose.connect(sway); sway.connect(trim);
       // A gentle cut of the "s" sounds, so the presence lift does not turn into hiss on the close voice.
       const deEss = ctx.createBiquadFilter(); deEss.type = 'highshelf'; deEss.frequency.value = 7500; deEss.gain.value = -2.5;
       split.connect(this.presence, 2); this.presence.connect(deEss); deEss.connect(c); deEss.connect(this.centerClose);
@@ -198,8 +218,17 @@ export class VirtualSurround {
   private applyWalk(immediate = false) {
     const ctx = this.ctx; if (!ctx || this.walkMix.length < 2) return;
     const t = ctx.currentTime; const m = this.walk ? 1 : 0; const tau = immediate ? 0.001 : 0.5;
-    const rate = 1 / (30 - 24 * this.walkSpeed);
-    this.walkOscillators.forEach(o => o.frequency.setTargetAtTime(rate, t, immediate ? 0.001 : 0.3));
+    // Per song (with "mixar cada música" on): locked to the tempo, more vertical movement in airy songs.
+    const a = this.analysis;
+    const next = this.autoMix ? walkPlan(30 - 24 * this.walkSpeed, a.bpm ?? 0, a.beatConfidence ?? 0, a.ambience ?? 0) : walkPlan(30 - 24 * this.walkSpeed, 0, 0, 0);
+    const changed = immediate || Math.abs(next.rate - this.plan.rate) / this.plan.rate > 0.01 || Math.abs(next.elevation - this.plan.elevation) > 0.05;
+    if (!changed && this.walkMix[0].gain.value === m) return;
+    this.plan = next;
+    this.walkOscillators.forEach(o => o.frequency.setTargetAtTime(next.rate, t, immediate ? 0.001 : 0.8));
+    this.elevationOsc?.frequency.setTargetAtTime(next.rate / 2, t, immediate ? 0.001 : 0.8);
+    this.swayOsc?.frequency.setTargetAtTime(next.rate * 2, t, immediate ? 0.001 : 0.8);
+    this.elevationMix?.gain.setTargetAtTime(m * next.elevation, t, tau);
+    this.swayMix?.gain.setTargetAtTime(m * 0.2, t, tau);
     this.walkMix.forEach(g => g.gain.setTargetAtTime(m, t, tau));
     // The fixed position fades out as the rotating one fades in.
     for (const { panner, x, z } of this.walkStatic) { panner.positionX.setTargetAtTime(x * (1 - m), t, tau); panner.positionZ.setTargetAtTime(z * (1 - m), t, tau); }

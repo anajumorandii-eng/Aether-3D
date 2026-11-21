@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 (async () => {
-  const { AutoMixer, targetOffsets } = await import('../src/audio/autoMix.ts');
+  const { AutoMixer, targetOffsets, walkPlan } = await import('../src/audio/autoMix.ts');
   // A reverberant ballad: less added space, voice pulled forward.
   const ballad = targetOffsets({ center: 0.3, ambience: 0.35, bass: 0.2 });
   assert(ballad.amount < -0.2 && ballad.focus > 0, JSON.stringify(ballad));
@@ -34,5 +34,12 @@ const assert = require('node:assert/strict');
   for (let i = 0; i < 60 * 4; i++) offCount += off.update({ center: 0.35, ambience: 0.3, bass: 0.15, level: -20 });
   for (let i = 0; i < 6 * 4; i++) offCount += off.update({ center: 0.05, ambience: 0.05, bass: 0.6, level: -12 });
   assert.equal(offCount, 0, 'with Spotify timing, only gaps count');
+  // 8D walk: locked to whole beats per turn, nearest the chosen speed; free when there is no clear beat.
+  const locked = walkPlan(8, 120, 0.8, 0.1);
+  assert.equal(locked.beats, 16); assert(Math.abs(locked.period - 8) < 1e-9);
+  assert.equal(walkPlan(18, 120, 0.8, 0.1).beats, 32);
+  assert.equal(walkPlan(8, 75, 0.8, 0.1).beats, 8);
+  const free = walkPlan(12, 120, 0.1, 0.1); assert.equal(free.beats, null); assert.equal(free.period, 12);
+  assert(walkPlan(12, 120, 0.8, 0.4).elevation > walkPlan(12, 120, 0.8, 0.05).elevation, 'airy songs move more up and down');
   console.log('Live DJ auto-mix: per-song targets, smoothing, gap detection, short dips ignored, reset: OK');
 })().catch(e => { console.error(e); process.exit(1); });

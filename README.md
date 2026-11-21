@@ -131,3 +131,9 @@ A ordem das músicas fica com o Spotify (aleatório, Smart Shuffle e o crossfade
 ## Passeio 8D
 
 No Cinema 7.1 e no DJ 3D, o **Passeio 8D** faz os instrumentos e a ambiência girarem ao redor da cabeça, passando de um ouvido para o outro e por trás, enquanto a voz fica parada à frente. Dois osciladores (cosseno e seno do ângulo) movem as posições dos alto-falantes HRTF na thread de áudio, então o giro continua com a página em segundo plano. A velocidade vai de uma volta a cada 30 s até uma a cada 6 s. O DJ 3D liga o passeio a partir do nível Intenso.
+
+Com **DJ ao vivo: mixar cada música** ligado, o passeio se adapta a cada música:
+
+- **No ritmo:** o processador mede o andamento (BPM) pelo fluxo espectral das batidas, com autocorrelação de 60 a 180 BPM nos últimos ~11 s. O giro trava num número inteiro de tempos por volta (4, 8, 16, 32 ou 64, para cair nos compassos), o mais próximo da velocidade escolhida. Sem batida clara, gira na velocidade escolhida.
+- **Em altura:** os alto-falantes também sobem e descem (meia volta por giro). Músicas com mais ambiência se movem mais.
+- **Voz que balança:** a voz próxima balança de leve entre os ouvidos (duas vezes por volta), sem sair da frente.

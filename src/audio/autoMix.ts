@@ -69,3 +69,31 @@ export class AutoMixer {
   newTrack() { this.profile = null; this.sinceTrack = 0; this.sinceChange = 0; this.novelty = 0; }
   reset() { this.offsets = { focus: 0, amount: 0, punch: 0 }; this.newTrack(); this.silence = 0; this.slow = this.fast = null; }
 }
+
+/** How the 8D walk moves for this song. */
+export interface WalkPlan {
+  /** Turns per second. */
+  rate: number;
+  /** Seconds per turn. */
+  period: number;
+  /** Beats per turn when locked to the song's tempo; null when the song has no clear beat. */
+  beats: number | null;
+  /** Up-and-down movement, 0–1 (about ±30° at 1). */
+  elevation: number;
+}
+
+/**
+ * Locks the 8D turn to the song: a whole number of beats per turn (4 to 64, a power of two, so it lands
+ * on bars and phrases), the one closest to the speed the listener chose. Songs with more ambience
+ * (reverberant, dreamy) also move more up and down.
+ */
+export function walkPlan(basePeriod: number, bpm: number, confidence: number, ambience: number): WalkPlan {
+  const elevation = clamp(0.35 + 1.5 * ambience, 0.35, 0.8);
+  if (!(bpm >= 60 && bpm <= 200) || confidence < 0.3) return { rate: 1 / basePeriod, period: basePeriod, beats: null, elevation };
+  let beats = 4;
+  for (const b of [4, 8, 16, 32, 64]) {
+    if (Math.abs(Math.log((b * 60) / bpm / basePeriod)) < Math.abs(Math.log((beats * 60) / bpm / basePeriod))) beats = b;
+  }
+  const period = (beats * 60) / bpm;
+  return { rate: 1 / period, period, beats, elevation };
+}

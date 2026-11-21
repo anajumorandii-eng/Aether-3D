@@ -59,6 +59,19 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
       return { fixedMin: Math.min(...fixed), walkMin: Math.min(...walking), walkMax: Math.max(...walking) };
     });
     assert(walkRange.fixedMin > 1.2, `without 8D the left sound stays left ${JSON.stringify(walkRange)}`);
+    // Locked to the beat: tempo reports from the processor (accuracy is covered in surround-dsp.cjs) make the
+    // real walk oscillators turn on whole beats.
+    const locked = await p.evaluate(async () => {
+      engine.setSurroundEnabled(true); engine.setAutoMix(true); engine.setWalkSpeed(92); engine.setWalk(true); // about 8 s per turn
+      const s = engine.surround; s.generation += 1; // the live processor's own reports are now ignored
+      const report = { generation: s.generation, center: 0.3, ambience: 0.1, bass: 0.3, level: -18, bpm: 120, beatConfidence: 0.9, frames: 48000 };
+      for (let i = 0; i < 16; i++) { s.node.port.onmessage({ data: report }); await new Promise(r => setTimeout(r, 300)); } // the turn rate glides (0.8 s)
+      const result = { walk: engine.getSurroundAnalysis().walk, rate: s.walkOscillators[0].frequency.value };
+      engine.setWalk(false);
+      return result;
+    });
+    assert(locked.walk?.beats === 16 && Math.abs(locked.walk.period - 8) < 0.01 && Math.abs(locked.rate - 0.125) < 0.005, `walk locks to 120 BPM: ${JSON.stringify(locked)}`);
+    console.log('Passeio 8D locks to the song tempo (120 BPM, 16 beats per turn): OK');
     assert(walkRange.walkMin < 0.85 && walkRange.walkMax > 1.2, `with 8D it crosses to the right and back ${JSON.stringify(walkRange)}`);
     console.log('Passeio 8D: a left-only sound circles to the right ear and back: OK');
 
@@ -82,7 +95,7 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
       const after = { filter: engine.djFilter.frequency.value, echo: engine.echoSend.gain.value };
       engine.djTrackChange(); // within 8 s: ignored
       const repeat = engine.djFilter.frequency.value;
-      engine.setDjTransitions(false); engine.djOutro(2); await wait(300);
+      engine.setDjTransitions(false); engine.djOutro(2); await wait(900); // the filter glides back (0.1 s)
       return { outro, after, repeat, off: { filter: engine.djFilter.frequency.value, echo: engine.echoSend.gain.value } };
     });
     assert(dj.outro.filter > 500 && dj.outro.echo > 0.4, JSON.stringify(dj));
