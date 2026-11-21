@@ -43,6 +43,15 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     phase = 'B';
     await p.getByText(/^Transição de DJ: Lovely/).waitFor({ timeout: 10000 });
     console.log('Live DJ end to end: Spotify song shown, outro before the end, transition into the next song: OK');
+    // The log explains what happened, and the test button plays a whole transition on demand.
+    await p.getByText('Registro do DJ').click();
+    await p.getByText(/Spotify: nova música → Lovely/).waitFor();
+    await p.getByText(/Transição tocada → Lovely/).waitFor();
+    await p.waitForTimeout(8500);
+    await p.getByRole('button', { name: 'Testar transição agora' }).click();
+    await p.getByText(/Teste de transição/).waitFor();
+    await p.getByText(/^Transição de DJ: nova música/).waitFor({ timeout: 8000 });
+    console.log('DJ log and on-demand transition test: OK');
     assert.deepEqual(errors, []);
   } finally { await b.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

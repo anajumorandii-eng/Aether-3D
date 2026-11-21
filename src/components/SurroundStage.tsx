@@ -3,12 +3,13 @@ import { SPEAKERS, type SurroundAnalysis } from '../audio/VirtualSurround';
 import { Range, Toggle } from './ui';
 
 /** Cinema 7.1: seven virtual speakers around the head, the voice isolated in front. */
-export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status, walk, walkSpeed, onWalk, onWalkSpeed }: {
+export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status, log, onTest, walk, walkSpeed, onWalk, onWalkSpeed }: {
   readAnalysis: () => SurroundAnalysis | null; playing: boolean; enabled: boolean;
   amount: number; focus: number; punch: number; onAmount: (value: number) => void; onFocus: (value: number) => void; onPunch: (value: number) => void;
   autoMix: boolean; onAutoMix: (enabled: boolean) => void; transitions: boolean; onTransitions: (enabled: boolean) => void;
   /** How song changes are being timed while playing live; null otherwise. */
   status?: string | null;
+  log?: { at: string; text: string }[]; onTest?: () => void;
   walk: boolean; walkSpeed: number; onWalk: (enabled: boolean) => void; onWalkSpeed: (value: number) => void;
 }) {
   const [analysis, setAnalysis] = useState<SurroundAnalysis | null>(null);
@@ -45,6 +46,11 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>DJ ao vivo: mixar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="DJ ao vivo: mixar cada música" /></div>
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Transições de DJ</span><Toggle checked={transitions} onChange={onTransitions} label="Transições de DJ" /></div>
       {transitions && status && <p role="status" className="text-xs text-ink-muted">{status}</p>}
+      {transitions && onTest && <button type="button" onClick={onTest} disabled={!playing} className="w-full min-h-11 rounded-md border border-line-strong bg-raised/60 text-xs font-medium text-ink hover:bg-raised disabled:opacity-40 transition">Testar transição agora</button>}
+      {log && log.length > 0 && <details className="text-xs text-ink-muted">
+        <summary className="cursor-pointer min-h-11 flex items-center">Registro do DJ</summary>
+        <ol className="space-y-1 font-mono text-[11px]">{log.map((item, i) => <li key={`${item.at}-${i}`}><span className="text-ink-faint">{item.at}</span> {item.text}</li>)}</ol>
+      </details>}
       {autoMix && measured && analysis.offsets && <p className="text-xs text-ink-muted">Nesta música: <span className="font-mono text-ink">{[['Voz', analysis.offsets.focus], ['Envolvimento', analysis.offsets.amount], ['Graves', analysis.offsets.punch]].map(([label, v]) => `${label} ${Number(v) >= 0 ? '+' : '−'}${Math.abs(Math.round(Number(v) * 100))}`).join(' · ')}</span></p>}
       <p className="text-[11px] text-ink-muted leading-relaxed">Cada música recebe sua própria mixagem, a partir dos seus ajustes acima. Nas trocas, o filtro abre a partir dos graves e o fim da música anterior ecoa.</p>
     </div>

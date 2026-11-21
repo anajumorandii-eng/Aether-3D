@@ -111,6 +111,14 @@ export default function App() {
   const [liveNow, setLiveNow] = useState<SpotifyNowPlaying | null>(null);
   const [liveTiming, setLiveTiming] = useState<{ source: 'spotify' | 'audio'; error?: string }>({ source: 'audio' });
   const nextSongNameRef = useRef<string | null>(null);
+  // Registro do DJ: what the DJ saw and did, newest first, so a missing transition can be explained.
+  const [djLog, setDjLog] = useState<{ at: string; text: string }[]>([]);
+  const logDj = useCallback((text: string) => {
+    const at = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setDjLog(log => (log[0]?.text === text ? log : [{ at, text }, ...log].slice(0, 8)));
+  }, []);
+  const logDjRef = useRef(logDj);
+  logDjRef.current = logDj;
 
   // Ao vivo (computador): aba do navegador ou entrada de áudio, sem salvar arquivos
   const [liveSource, setLiveSource] = useState<LiveSource | null>(null);
@@ -283,6 +291,7 @@ export default function App() {
     engine.onDjTransition = () => {
       const name = nextSongNameRef.current; nextSongNameRef.current = null;
       notifyRef.current(name ? `Transição de DJ: ${name}` : 'Transição de DJ: nova música');
+      logDjRef.current(name ? `Transição tocada → ${name}` : 'Transição tocada (troca percebida pelo áudio)');
     };
     const audio = engine.getAudioElement();
 
@@ -626,24 +635,31 @@ export default function App() {
         engine?.setSpotifyTiming(true);
         if (!now || !engine) return;
         // A different song, or the same one started again (repeat).
+        if (!lastId) logDj(`Spotify lido: ${now.name} · faltam ${Math.round((now.durationMs - now.progressMs) / 1000)} s`);
         if (lastId && (now.id !== lastId || now.progressMs + 5000 < lastProgress)) {
           nextSongNameRef.current = now.name;
-          engine.djTrackChange();
+          logDj(`Spotify: nova música → ${now.name}`);
+          if (!engine.djTrackChange(true)) logDj('Transição não tocada: as transições estão desligadas');
         }
         lastId = now.id; lastProgress = now.progressMs;
         const left = (now.durationMs - now.progressMs) / 1000;
-        if (now.isPlaying && left > 0 && left <= 9 && engine.djOutro(left)) notifyRef.current(`Saída de DJ: “${now.name}” ecoando`);
+        if (now.isPlaying && left > 0 && left <= 12 && engine.djOutro(left)) {
+          notifyRef.current(`Saída de DJ: “${now.name}” ecoando`);
+          logDj(`Saída de DJ começou (faltam ${Math.round(left)} s)`);
+        }
       } catch (error) {
         // The DJ keeps working from the audio alone, and says why.
         if (cancelled) return;
-        setLiveTiming({ source: 'audio', error: error instanceof Error ? error.message : 'sem resposta' });
+        const message = error instanceof Error ? error.message : 'sem resposta';
+        setLiveTiming({ source: 'audio', error: message });
+        logDj(`Spotify não respondeu: ${message}`);
         engineRef.current?.setSpotifyTiming(false);
       } finally { busy = false; }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 2500);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [liveSource, spotifyToken]);
+  }, [liveSource, spotifyToken, logDj]);
 
   useEffect(() => {
     handoff.reset();
@@ -1102,7 +1118,7 @@ export default function App() {
             </div>
             <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Cinema 7.1 virtual</span><Toggle checked={surroundEnabled} onChange={changeSurround} label="Cinema 7.1 virtual" /></div>
             {!surroundEnabled && <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Adaptar à música</span><Toggle checked={adaptiveEnabled} onChange={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }} label="Adaptar à música" /></div>}
-            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} punch={bassPunch} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} onPunch={changeBassPunch} autoMix={autoMix} onAutoMix={changeAutoMix} transitions={djTransitions} onTransitions={changeDjTransitions} status={djStatus} walk={walk8d} walkSpeed={walkSpeed} onWalk={changeWalk} onWalkSpeed={changeWalkSpeed} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
+            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} punch={bassPunch} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} onPunch={changeBassPunch} autoMix={autoMix} onAutoMix={changeAutoMix} transitions={djTransitions} onTransitions={changeDjTransitions} status={djStatus} log={djLog} onTest={() => { if (engineRef.current?.djTest()) logDj('Teste de transição: 4 s de saída, depois a entrada'); else notify('Ligue “Transições de DJ” para testar.'); }} walk={walk8d} walkSpeed={walkSpeed} onWalk={changeWalk} onWalkSpeed={changeWalkSpeed} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
             <div inert={!spatialEnabled} className={`flex-1 grid place-items-center py-2 ${spatialEnabled ? '' : 'opacity-35'}`}>
               <SpatialStage
                 pos={pos}

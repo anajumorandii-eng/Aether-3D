@@ -52,8 +52,8 @@ export class AutoMixer {
     this.slow = follow(this.slow, 12); this.fast = follow(this.fast, 1.2);
     const d = Math.abs(this.fast.center - this.slow.center) * 2 + Math.abs(this.fast.ambience - this.slow.ambience) * 2 +
       Math.abs(this.fast.bass - this.slow.bass) * 1.5 + Math.abs(this.fast.level - this.slow.level) / 12;
-    this.novelty = d > 0.35 ? this.novelty + dt : 0;
-    if (!changed && this.detectNovelty && this.novelty >= 2 && this.sinceChange >= 40) { this.newTrack(); changed = true; this.slow = { ...this.fast }; }
+    this.novelty = d > 0.25 ? this.novelty + dt : 0;
+    if (!changed && this.detectNovelty && this.novelty >= 1.5 && this.sinceChange >= 30) { this.newTrack(); changed = true; this.slow = { ...this.fast }; }
     // Learn the new song quickly for the first seconds, then follow it slowly.
     const tau = this.sinceTrack < 5 ? 1 : 4;
     const k = 1 - Math.exp(-dt / tau);

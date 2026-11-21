@@ -269,10 +269,10 @@ export class SpatialAudioEngine {
    */
   public djOutro(secondsLeft: number): boolean {
     if (!this.djTransitions || this.outroArmed || !this.ctx || !this.djFilter || !this.echoSend) return false;
-    const t = this.ctx.currentTime; const length = Math.max(2, Math.min(10, secondsLeft));
+    const t = this.ctx.currentTime; const length = Math.max(2, Math.min(12, secondsLeft));
     this.outroArmed = true;
-    const f = this.djFilter.frequency; f.cancelScheduledValues(t); f.setValueAtTime(Math.max(20, f.value), t); f.exponentialRampToValueAtTime(650, t + length);
-    const e = this.echoSend.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0.55, t + length);
+    const f = this.djFilter.frequency; f.cancelScheduledValues(t); f.setValueAtTime(Math.max(20, f.value), t); f.exponentialRampToValueAtTime(900, t + length);
+    const e = this.echoSend.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0.6, t + length);
     // If no new song is noticed (paused, or the queue ended), open the sound again anyway.
     window.setTimeout(() => { if (this.outroArmed) { this.lastTrackChange = -Infinity; this.djTrackChange(); } }, (length + 8) * 1000);
     return true;
@@ -282,19 +282,29 @@ export class SpatialAudioEngine {
    * A new song: the filter sweeps open from the bass up and the echo of the last song rings out,
    * while the room opens for a few seconds. Repeated signals within 8 s are one change.
    */
-  public djTrackChange(): boolean {
+  public djTrackChange(force = false): boolean {
     if (!this.ctx) return false;
     const t = this.ctx.currentTime;
-    if (t - this.lastTrackChange < 8) return false;
+    // Spotify's word is final (force); guesses from the audio within 8 s of a change are the same change.
+    if (!force && t - this.lastTrackChange < 8) return false;
     this.lastTrackChange = t;
     const transitions = this.djTransitions && this.djFilter && this.echoSend;
     this.surround.newTrack(transitions ? 6 : 0);
     this.onDjTransition?.();
     if (!transitions) return true;
     const f = this.djFilter!.frequency; f.cancelScheduledValues(t);
-    f.setValueAtTime(this.outroArmed ? Math.max(20, f.value) : 420, t); f.exponentialRampToValueAtTime(20, t + 2.5);
+    f.setValueAtTime(this.outroArmed ? Math.max(20, f.value) : 700, t); f.exponentialRampToValueAtTime(20, t + 3);
     const e = this.echoSend!.gain; e.cancelScheduledValues(t); e.setValueAtTime(e.value, t); e.linearRampToValueAtTime(0, t + 0.6);
     this.outroArmed = false;
+    return true;
+  }
+
+  /** Plays a whole transition now (4 s outro, then the new-song sweep), to hear what the DJ does. */
+  public djTest() {
+    if (!this.djTransitions) return false;
+    this.outroArmed = false;
+    if (!this.djOutro(4)) return false;
+    window.setTimeout(() => this.djTrackChange(true), 4200);
     return true;
   }
 
