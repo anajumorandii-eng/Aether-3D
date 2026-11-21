@@ -16,6 +16,10 @@ export interface ListeningMode {
   djIntensity?: number;
   adaptive?: boolean;
   adaptiveIntensity?: number;
+  /** Cinema 7.1: stereo split into seven virtual HRTF speakers. */
+  surround?: boolean;
+  surroundAmount?: number;
+  voiceFocus?: number;
 }
 
 const base = { room: 'off' as RoomType, mix: 0, orbit: false, speed: 0.35, position: { x: 0, z: -0.35 }, elevation: 0, spatial: false, night: false };
@@ -41,6 +45,7 @@ export function createDjMode(value: number): ListeningMode {
 
 // Profiles use this app's DSP; these are not Boom 3D's proprietary algorithms.
 export const LISTENING_MODES: ListeningMode[] = [
+  { ...base, id: 'cinema', name: 'Cinema 7.1', description: 'Voz isolada no centro, à frente. Ambiência em alto-falantes virtuais nas laterais e atrás.', eq: { name: 'Cinema 7.1', gains: [3, 2, 0, -1, 0, 0, 1, 1, 2, 1] }, room: 'studio', mix: 0.15, position: { x: 0, z: -0.7 }, spatial: true, adaptive: true, adaptiveIntensity: 65, surround: true, surroundAmount: 70, voiceFocus: 70 },
   { ...base, id: 'immersive', name: 'Som 3D', description: 'Abertura e ambiência ajustadas ao estéreo, aos graves e à dinâmica da faixa.', eq: EQ_PRESETS[0], room: 'studio', mix: 0.2, orbit: false, position: { x: 0, z: -0.7 }, spatial: true, adaptive: true, adaptiveIntensity: 65 },
   { ...base, id: 'ambience', name: 'Ambiência', description: 'Reverberação de teatro para dar profundidade ao estéreo, sem órbita.', eq: EQ_PRESETS[0], room: 'hall', mix: 0.35 },
   { ...base, id: 'fidelity', name: 'Fidelidade', description: 'Realce moderado de presença e agudos para destacar detalhes.', eq: { name: 'Fidelidade', gains: [0, 0, -1, -1, 0, 1, 2, 2, 2, 1] } },
@@ -52,5 +57,5 @@ export const LISTENING_MODES: ListeningMode[] = [
 
 /** Upgrade old rotating presets without discarding a user's EQ or room settings. */
 export function upgradeListeningMode(mode: ListeningMode): ListeningMode {
-  return { ...mode, orbit: false, adaptive: mode.adaptive ?? (mode.orbit || mode.id === 'immersive' || mode.id === 'dj' || mode.djIntensity !== undefined), adaptiveIntensity: mode.adaptiveIntensity ?? mode.djIntensity ?? 65 };
+  return { ...mode, orbit: false, surround: mode.surround ?? false, surroundAmount: mode.surroundAmount ?? 70, voiceFocus: mode.voiceFocus ?? 70, adaptive: mode.adaptive ?? (mode.orbit || mode.id === 'immersive' || mode.id === 'dj' || mode.djIntensity !== undefined), adaptiveIntensity: mode.adaptiveIntensity ?? mode.djIntensity ?? 65 };
 }

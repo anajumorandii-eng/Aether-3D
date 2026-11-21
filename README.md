@@ -94,3 +94,27 @@ O navegador pode exigir um toque em **Continuar no Aether** para iniciar o áudi
 A busca usa títulos e artistas dos nomes dos arquivos; nomes ambíguos ou versões diferentes não são escolhidos automaticamente. A duração local também é conferida. Essa associação não usa reconhecimento acústico. Atualizações dependem de o navegador poder executar o app; ao voltar ao Aether, a consulta é imediata. A função deve ser ativada no aparelho destinado à reprodução, para evitar dois aparelhos tentando assumir a mesma sessão.
 
 `npm run test:spotify` verifica ordem de início/pausa, posição, mesma faixa retomada, arquivo ausente, bloqueio do navegador, cancelamento, troca de faixa e recusa do Spotify. Os testes de navegador usam respostas simuladas do Spotify e áudio WAV real; não dependem de credenciais ou de controlar uma conta Spotify real.
+
+## Cinema 7.1 virtual
+
+O modo **Cinema 7.1** separa a mixagem estéreo, por faixa de frequência, em sete alto-falantes virtuais. Ele mede a coerência e o equilíbrio entre os canais em uma STFT de 2048 pontos, num AudioWorklet (`src/audio/surround-processor.js`):
+
+- **Centro (C):** o que está igual e em fase nos dois canais, em geral a voz principal. O ajuste **Voz à frente** controla quanto é extraído e o nível do centro (até cerca de +3,5 dB).
+- **Frente (FL/FR):** o que está panoramizado para um lado.
+- **Laterais e traseiros (SL/SR/BL/BR):** o que não tem correlação entre os canais (reverberação, sala, pads). Os traseiros recebem a mesma ambiência com atraso e filtro, para não se fundirem com as laterais. O ajuste **Envolvimento** controla essa parte.
+- **Graves abaixo de ~120 Hz:** ficam fora do HRTF e vão direto aos dois ouvidos.
+
+Cada canal toca de um `PannerNode` HRTF na posição de uma sala 7.1 (±30°, 0°, ±100°, ±145°). Reflexões iniciais curtas ajudam o som a sair de dentro da cabeça, e a reverberação do ambiente escolhido chega pelas laterais e por trás. Centro, frente e graves somam exatamente a entrada, e a latência é fixa (2048 amostras). Quando o Cinema 7.1 está ligado, ele tem prioridade sobre a adaptação e o posicionamento manual. Quando outro modo toca, o processador desliga as FFTs para economizar bateria.
+
+Isso não é, nem contém, o Dolby Atmos: o motor da Dolby é fechado e licenciado. Com música estéreo, o resultado se aproxima de um “Dolby Headphone”. Uma mixagem Atmos original ainda exige o Apple Music no iPhone.
+
+## Ao vivo no computador (sem salvar músicas)
+
+Na **Biblioteca → Ao vivo · Computador** (Chrome ou Edge no computador):
+
+- **Capturar aba do Spotify:** abra `open.spotify.com` em outra aba, escolha essa aba e mantenha “Compartilhar áudio da guia” marcado. O navegador deixa a aba original muda (`suppressLocalAudioPlayback`) e só o som processado pelo Aether é ouvido.
+- **Usar uma entrada de áudio:** para o app do Spotify no Windows, instale o VB-CABLE e, em Configurações › Sistema › Som › Mixer de volume, envie só o Spotify para “CABLE Input”. No Aether, escolha “CABLE Output”.
+
+O cancelamento de eco, a supressão de ruído e o controle automático de ganho ficam desligados, porque estragariam a música. Controle a música no próprio Spotify. Tocar um arquivo encerra a captura. Desative o HeSuVi/Equalizer APO no fone para o processamento não dobrar.
+
+Para testar: `npm run test:audio` (inclui `tests/surround-dsp.cjs` e `tests/surround-browser.cjs`).

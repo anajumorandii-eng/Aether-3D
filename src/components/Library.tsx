@@ -43,6 +43,7 @@ interface Props {
   onPlayTrack: (index: number) => void;
   onRemoveTrack: (url: string) => void;
   cloud?: ReactNode;
+  live?: ReactNode;
 }
 
 export function Library(p: Props) {
@@ -166,6 +167,7 @@ export function Library(p: Props) {
         )}
       </section>
 
+      {p.live}
       {p.cloud}
 
       <section className="panel p-5 flex flex-col min-h-0 flex-1">

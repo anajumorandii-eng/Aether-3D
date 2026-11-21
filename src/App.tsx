@@ -33,6 +33,9 @@ import { Library, type PlayableTrack } from './components/Library';
 import { useAccount } from './account/useAccount';
 import { parseSound, parseModes, parseSpotify, type AccountSettings, type SettingsPatch } from './account/settings';
 import { AdaptiveStage } from './components/AdaptiveStage';
+import { SurroundStage } from './components/SurroundStage';
+import { LivePanel } from './components/LivePanel';
+import { captureDevice, captureTab, describeCaptureError, stopSource, type LiveSource } from './audio/liveInput';
 import { DjLevels } from './components/DjLevels';
 import { AccountPanel } from './components/AccountPanel';
 import { CustomizeSound } from './components/CustomizeSound';
@@ -97,6 +100,16 @@ export default function App() {
   const orbitSpeed = 0.35;
   const [adaptiveEnabled, setAdaptiveEnabled] = useState(true);
   const [adaptiveIntensity, setAdaptiveIntensity] = useState(65);
+  const [surroundEnabled, setSurroundEnabled] = useState(false);
+  const [surroundAmount, setSurroundAmount] = useState(70);
+  const [voiceFocus, setVoiceFocus] = useState(70);
+
+  // Ao vivo (computador): aba do navegador ou entrada de áudio, sem salvar arquivos
+  const [liveSource, setLiveSource] = useState<LiveSource | null>(null);
+  const [liveBusy, setLiveBusy] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const liveSourceRef = useRef<LiveSource | null>(null);
+  liveSourceRef.current = liveSource;
 
   // Som
   const [djIntensity, setDjIntensity] = useState(65);
@@ -150,8 +163,37 @@ export default function App() {
   notifyRef.current = notify;
 
   // ---------- Reprodução ----------
-  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity });
-  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity };
+  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus });
+  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus };
+
+  /** Applies every current sound setting to the engine (before a file or a live source starts). */
+  const applyEngineSettings = useCallback((engine: SpatialAudioEngine) => {
+    const s = settingsRef.current;
+    engine.init();
+    engine.applyPreset(s.eqGains);
+    engine.setSpatialEnabled(s.spatialEnabled);
+    engine.setAdaptiveEnabled(s.adaptiveEnabled);
+    engine.setAdaptiveIntensity(s.adaptiveIntensity);
+    engine.setSurroundEnabled(s.surroundEnabled);
+    engine.setSurroundAmount(s.surroundAmount);
+    engine.setVoiceFocus(s.voiceFocus);
+    engine.resetAdaptiveAnalysis();
+    engine.resetSurroundAnalysis();
+    engine.setNightMode(s.nightMode);
+    engine.setRoomType(s.roomType);
+    engine.setReverbMix(s.roomType === 'off' ? 0 : s.reverbMix);
+    engine.setPosition(s.pos.x * 3, s.elevation * 2, s.pos.z * 3);
+  }, []);
+
+  const stopLive = useCallback(() => {
+    const source = liveSourceRef.current;
+    if (!source) return;
+    liveSourceRef.current = null;
+    stopSource(source);
+    engineRef.current?.detachStream();
+    setLiveSource(null);
+    setIsPlaying(false);
+  }, []);
 
   const pendingSeekRef = useRef<{ position: number; receivedAt: number } | null>(null);
 
@@ -160,16 +202,8 @@ export default function App() {
     const engine = engineRef.current;
     if (!engine || !track.url) return false;
     const s = settingsRef.current;
-    engine.init();
-    engine.applyPreset(s.eqGains);
-    engine.setSpatialEnabled(s.spatialEnabled);
-    engine.setAdaptiveEnabled(s.adaptiveEnabled);
-    engine.setAdaptiveIntensity(s.adaptiveIntensity);
-    engine.resetAdaptiveAnalysis();
-    engine.setNightMode(s.nightMode);
-    engine.setRoomType(s.roomType);
-    engine.setReverbMix(s.roomType === 'off' ? 0 : s.reverbMix);
-    engine.setPosition(s.pos.x * 3, s.elevation * 2, s.pos.z * 3);
+    stopLive();
+    applyEngineSettings(engine);
 
     const audio = engine.getAudioElement();
     pendingSeekRef.current = startAt !== undefined && startAt >= 0 ? { position: startAt, receivedAt: performance.now() } : null;
@@ -184,7 +218,31 @@ export default function App() {
       notifyRef.current(`“${track.name}” está pronta. Toque em play para ouvir em 3D.`);
       return false;
     }
-  }, []);
+  }, [applyEngineSettings, stopLive]);
+
+  const startLive = useCallback(async (capture: () => Promise<LiveSource>) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    setLiveBusy(true);
+    setLiveError(null);
+    try {
+      const source = await capture();
+      stopLive();
+      engine.getAudioElement().pause();
+      applyEngineSettings(engine);
+      await engine.attachStream(source.stream);
+      // Sharing stopped from the browser's own bar, or the device unplugged.
+      source.stream.getAudioTracks()[0]?.addEventListener('ended', () => { if (liveSourceRef.current === source) stopLive(); });
+      liveSourceRef.current = source;
+      setLiveSource(source);
+      setIsPlaying(true);
+      notifyRef.current('Ao vivo pelo motor do Aether.');
+    } catch (error) {
+      setLiveError(describeCaptureError(error));
+    } finally {
+      setLiveBusy(false);
+    }
+  }, [applyEngineSettings, stopLive]);
 
   const step = useCallback(
     (dir: 1 | -1) => {
@@ -221,13 +279,14 @@ export default function App() {
     };
     const onEnded = () => stepRef.current(1);
     const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => { if (!liveSourceRef.current) setIsPlaying(false); };
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     return () => {
+      stopSource(liveSourceRef.current);
       engine.dispose();
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('loadedmetadata', onMeta);
@@ -240,6 +299,7 @@ export default function App() {
   const togglePlay = () => {
     const engine = engineRef.current;
     if (!engine) return;
+    if (liveSourceRef.current) { stopLive(); return; }
     const audio = engine.getAudioElement();
     if (audio.paused && followSpotify && spotifyToken && (handoffStatus.phase === 'blocked' || handoffStatus.phase === 'error')) {
       void handoff.retry(spotifyToken);
@@ -317,8 +377,13 @@ export default function App() {
     mode.eq.gains.every((gain, i) => gain === eqGains[i]) &&
     mode.room === roomType && mode.mix === reverbMix && mode.spatial === spatialEnabled && mode.night === nightMode &&
     Boolean(mode.adaptive) === adaptiveEnabled &&
+    Boolean(mode.surround) === surroundEnabled && (!mode.surround || (mode.surroundAmount === surroundAmount && mode.voiceFocus === voiceFocus)) &&
     (mode.adaptive ? mode.adaptiveIntensity === adaptiveIntensity : mode.elevation === elevation && mode.position.x === pos.x && mode.position.z === pos.z),
   );
+
+  const changeSurround = (enabled: boolean) => { setSurroundEnabled(enabled); engineRef.current?.setSurroundEnabled(enabled); };
+  const changeSurroundAmount = (value: number) => { setSurroundAmount(value); engineRef.current?.setSurroundAmount(value); };
+  const changeVoiceFocus = (value: number) => { setVoiceFocus(value); engineRef.current?.setVoiceFocus(value); };
 
   const applyListeningMode = (rawMode: ListeningMode, announce = true) => {
     const mode = upgradeListeningMode(rawMode);
@@ -326,6 +391,9 @@ export default function App() {
     setAdaptiveIntensity(mode.adaptiveIntensity ?? 65);
     engineRef.current?.setAdaptiveEnabled(Boolean(mode.adaptive));
     engineRef.current?.setAdaptiveIntensity(mode.adaptiveIntensity ?? 65);
+    changeSurround(Boolean(mode.surround));
+    changeSurroundAmount(mode.surroundAmount ?? 70);
+    changeVoiceFocus(mode.voiceFocus ?? 70);
     if (mode.djIntensity !== undefined) setDjIntensity(mode.djIntensity);
     setPreferredModeId(mode.id);
     selectPreset(mode.eq.name, [...mode.eq.gains]);
@@ -353,7 +421,7 @@ export default function App() {
       description: 'Sua configuração de áudio.', eq: { name: activePreset, gains: [...eqGains] },
       room: roomType, mix: reverbMix, orbit: autoOrbit, speed: orbitSpeed,
       position: { ...pos }, elevation, spatial: spatialEnabled, night: nightMode,
-      adaptive: adaptiveEnabled, adaptiveIntensity,
+      adaptive: adaptiveEnabled, adaptiveIntensity, surround: surroundEnabled, surroundAmount, voiceFocus,
       ...((preferredModeId === 'dj' || activeMode?.djIntensity !== undefined) ? { djIntensity } : {}),
     };
     const next = existing ? customModes.map(m => m.id === mode.id ? mode : m) : [...customModes, mode];
@@ -757,7 +825,7 @@ export default function App() {
   const accountSettings: AccountSettings = {
     sound: JSON.stringify({ modeId: preferredModeId, djIntensity, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
       spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed, adaptive: adaptiveEnabled, adaptiveIntensity,
-      position: pos, elevation }),
+      surround: surroundEnabled, surroundAmount, voiceFocus, position: pos, elevation }),
     customModes: JSON.stringify(customModes), spotify: JSON.stringify({ playlistId: selectedPlaylist, refreshRevision: spotifyRefreshRevision }), cloudUrl: cloudUrl ?? '',
   };
   const applyAccountSettings = (patch: SettingsPatch) => {
@@ -771,6 +839,7 @@ export default function App() {
       setSpatialEnabled(sound.spatial); setNightMode(sound.night);
       setAdaptiveEnabled(adaptive); setAdaptiveIntensity(intensity);
       engineRef.current?.setAdaptiveEnabled(adaptive); engineRef.current?.setAdaptiveIntensity(intensity);
+      changeSurround(sound.surround ?? false); changeSurroundAmount(sound.surroundAmount ?? 70); changeVoiceFocus(sound.voiceFocus ?? 70);
       setPos(sound.position); setElevation(sound.elevation);
       const engine = engineRef.current;
       engine?.applyPreset(sound.gains); engine?.setRoomType(sound.room); engine?.setReverbMix(sound.mix);
@@ -795,6 +864,8 @@ export default function App() {
   accountIdentityRef.current = account.user?.uid ?? null;
 
   const readAdaptiveAnalysis = useCallback(() => engineRef.current?.getAdaptiveAnalysis() ?? null, []);
+  const readSurroundAnalysis = useCallback(() => engineRef.current?.getSurroundAnalysis() ?? null, []);
+  const playerTrack: PlayableTrack | undefined = liveSource ? { id: 'live', name: 'Ao vivo', artist: liveSource.label, source: 'local' } : currentTrack;
   const engineActive = isPlaying && Boolean(engineRef.current?.ready);
 
   const library = (
@@ -823,6 +894,16 @@ export default function App() {
       onSelectPlaylist={(id) => spotifyToken && selectPlaylist(id, spotifyToken)}
       onPlayTrack={(i) => loadTrack(tracks[i])}
       onRemoveTrack={removeLocal}
+      live={
+        <LivePanel
+          liveLabel={liveSource?.label ?? null}
+          busy={liveBusy}
+          error={liveError}
+          onTab={() => void startLive(captureTab)}
+          onDevice={device => void startLive(() => captureDevice(device))}
+          onStop={stopLive}
+        />
+      }
       cloud={
         <CloudPanel
           configured={Boolean(cloudUrl)}
@@ -933,15 +1014,16 @@ export default function App() {
           <section className="stage-panel px-5 pb-5 sm:px-7 flex-1 flex flex-col">
             <PanelHeader
               icon={<Orbit className="w-4 h-4" />}
-              title={adaptiveEnabled ? 'Imersão adaptativa' : 'Posicionamento manual'}
+              title={surroundEnabled ? 'Cinema 7.1 virtual' : adaptiveEnabled ? 'Imersão adaptativa' : 'Posicionamento manual'}
             />
 
             <div className="flex items-center justify-between mt-4 mb-2 gap-3 text-xs text-ink-muted">
               <span>Processamento espacial</span>
               <Toggle checked={spatialEnabled} onChange={(enabled) => { setSpatialEnabled(enabled); engineRef.current?.setSpatialEnabled(enabled); }} label="Processamento espacial" />
             </div>
-            <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Adaptar à música</span><Toggle checked={adaptiveEnabled} onChange={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }} label="Adaptar à música" /></div>
-            {adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
+            <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Cinema 7.1 virtual</span><Toggle checked={surroundEnabled} onChange={changeSurround} label="Cinema 7.1 virtual" /></div>
+            {!surroundEnabled && <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Adaptar à música</span><Toggle checked={adaptiveEnabled} onChange={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }} label="Adaptar à música" /></div>}
+            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
             <div inert={!spatialEnabled} className={`flex-1 grid place-items-center py-2 ${spatialEnabled ? '' : 'opacity-35'}`}>
               <SpatialStage
                 pos={pos}
@@ -987,12 +1069,12 @@ export default function App() {
       </main>
 
       <PlayerBar
-        track={currentTrack}
+        track={playerTrack}
         isPlaying={isPlaying}
         currentTime={currentTime}
         duration={duration}
         volume={volume}
-        canPlay={tracks.some((t) => t.url)}
+        canPlay={Boolean(liveSource) || tracks.some((t) => t.url)}
         onToggle={togglePlay}
         onPrev={() => step(-1)}
         onNext={() => step(1)}
@@ -1004,6 +1086,8 @@ export default function App() {
         gains={eqGains} activePreset={activePreset} onPreset={selectPreset} onBand={changeBand}
         room={roomType} mix={reverbMix} onRoom={changeRoom} onMix={changeMix}
         spatial={spatialEnabled} night={nightMode} adaptive={adaptiveEnabled} adaptiveIntensity={adaptiveIntensity}
+        surround={surroundEnabled} surroundAmount={surroundAmount} voiceFocus={voiceFocus}
+        onSurround={changeSurround} onSurroundAmount={changeSurroundAmount} onVoiceFocus={changeVoiceFocus}
         onSpatial={enabled => { setSpatialEnabled(enabled); engineRef.current?.setSpatialEnabled(enabled); }}
         onNight={enabled => { setNightMode(enabled); engineRef.current?.setNightMode(enabled); }}
         onAdaptive={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }}

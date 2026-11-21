@@ -1,5 +1,6 @@
 import { AdaptiveImmersion } from './AdaptiveImmersion';
 import { PlaybackSession } from './PlaybackSession';
+import { VirtualSurround } from './VirtualSurround';
 
 export interface EQPreset {
   name: string;
@@ -36,8 +37,13 @@ export class SpatialAudioEngine {
   private adaptive = new AdaptiveImmersion(() => this.routeSpatial());
   private adaptiveGain: GainNode | null = null;
   private adaptiveReady: Promise<void> | null = null;
+  private surround = new VirtualSurround(() => this.routeSpatial());
+  private surroundGain: GainNode | null = null;
+  private surroundReady: Promise<void> | null = null;
+  private streamSource: MediaStreamAudioSourceNode | null = null;
   private spatialOn = true;
   private adaptiveOn = true;
+  private surroundOn = false;
   private impulseRoom: RoomType | null = null;
 
   constructor() {
@@ -117,6 +123,8 @@ export class SpatialAudioEngine {
     this.stereoGain.gain.value = 1;
     this.adaptiveGain = this.ctx.createGain();
     this.adaptiveGain.gain.value = 0;
+    this.surroundGain = this.ctx.createGain();
+    this.surroundGain.gain.value = 0;
 
     // 6. Analisador de espectro FFT
     this.analyserNode = this.ctx.createAnalyser();
@@ -137,12 +145,14 @@ export class SpatialAudioEngine {
     this.wetGain.connect(this.stereoGain);
     this.stereoGain.connect(this.compressorNode);
     this.adaptiveGain.connect(this.compressorNode);
+    this.surroundGain.connect(this.compressorNode);
     this.compressorNode.connect(this.analyserNode);
     this.analyserNode.connect(this.ctx.destination);
 
     this.isInitialized = true;
     this.routeSpatial();
     this.adaptiveReady = this.adaptive.init(this.ctx, lastFilter, this.adaptiveGain).then(() => this.routeSpatial());
+    this.surroundReady = this.surround.init(this.ctx, lastFilter, this.wetGain, this.surroundGain).then(() => this.routeSpatial());
   }
 
   public async play() {
@@ -150,8 +160,34 @@ export class SpatialAudioEngine {
     // Start both operations within the user gesture, before awaiting either one.
     const playing = this.audioEl.play();
     const resuming = this.ctx?.resume();
-    try { await Promise.all([playing, resuming, this.adaptiveReady]); } catch (error) { this.audioEl.pause(); throw error; }
+    this.detachStream();
+    try { await Promise.all([playing, resuming, this.adaptiveReady, this.surroundReady]); } catch (error) { this.audioEl.pause(); throw error; }
   }
+
+  /**
+   * Plays a live stream (a browser tab or an input device such as a virtual cable) through the
+   * same EQ, room and spatial chain as a file. The file player is paused while a stream is attached.
+   */
+  public async attachStream(stream: MediaStream) {
+    this.init();
+    this.detachStream();
+    this.audioEl.pause();
+    const ctx = this.ctx!;
+    this.streamSource = ctx.createMediaStreamSource(stream);
+    this.sourceNode?.disconnect();
+    this.streamSource.connect(this.filters[0]);
+    this.resetAdaptiveAnalysis();
+    await Promise.all([ctx.resume(), this.adaptiveReady, this.surroundReady]);
+  }
+
+  public detachStream() {
+    if (!this.streamSource) return;
+    this.streamSource.disconnect();
+    this.streamSource = null;
+    if (this.sourceNode && this.filters[0]) this.sourceNode.connect(this.filters[0]);
+  }
+
+  public get streaming() { return this.streamSource !== null; }
 
   public dispose() {
     this.audioEl.pause();
@@ -163,13 +199,25 @@ export class SpatialAudioEngine {
 
   private routeSpatial() {
     if (!this.ctx || !this.spatialGain || !this.stereoGain || !this.adaptiveGain) return;
-    const adaptive = this.spatialOn && this.adaptiveOn && this.adaptive.analysis.status === 'ready';
-    const manual = this.spatialOn && !this.adaptiveOn;
+    // Cinema 7.1 takes priority; while it loads, or where it is unsupported, playback stays stereo.
+    const surround = this.spatialOn && this.surroundOn && this.surround.analysis.status === 'ready';
+    const adaptive = this.spatialOn && !this.surroundOn && this.adaptiveOn && this.adaptive.analysis.status === 'ready';
+    const manual = this.spatialOn && !this.surroundOn && !this.adaptiveOn;
     const t = this.ctx.currentTime;
+    this.surround.setActive(surround);
+    this.surroundGain?.gain.setTargetAtTime(surround ? 1 : 0, t, 0.03);
     this.adaptiveGain.gain.setTargetAtTime(adaptive ? 1 : 0, t, 0.03);
     this.spatialGain.gain.setTargetAtTime(manual ? 1 : 0, t, 0.03);
-    this.stereoGain.gain.setTargetAtTime(adaptive || manual ? 0 : 1, t, 0.03);
+    this.stereoGain.gain.setTargetAtTime(surround || adaptive || manual ? 0 : 1, t, 0.03);
   }
+
+  public setSurroundEnabled(enabled: boolean) { this.surroundOn = enabled; this.routeSpatial(); }
+  /** Side and rear envelopment, 0–100. */
+  public setSurroundAmount(value: number) { this.surround.setAmount(value / 100); }
+  /** How far forward and close the voice sits, 0–100. */
+  public setVoiceFocus(value: number) { this.surround.setFocus(value / 100); }
+  public getSurroundAnalysis() { return { ...this.surround.analysis }; }
+  public resetSurroundAnalysis() { this.surround.reset(); }
 
   public setSpatialEnabled(enabled: boolean) { this.spatialOn = enabled; this.routeSpatial(); }
   public setAdaptiveEnabled(enabled: boolean) { this.adaptiveOn = enabled; this.routeSpatial(); }

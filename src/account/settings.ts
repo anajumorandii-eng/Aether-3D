@@ -8,6 +8,9 @@ export interface SoundSettings {
   djIntensity?: number;
   adaptive?: boolean;
   adaptiveIntensity?: number;
+  surround?: boolean;
+  surroundAmount?: number;
+  voiceFocus?: number;
   gains: number[];
   preset: string;
   room: RoomType;
@@ -25,7 +28,8 @@ export const SETTINGS_KEYS = ['sound', 'customModes', 'spotify', 'cloudUrl'] as 
 const between = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 export function parseSound(raw: string): SoundSettings {
   const s = JSON.parse(raw) as SoundSettings;
-  if (!s || (s.adaptive !== undefined && typeof s.adaptive !== 'boolean') || (s.adaptiveIntensity !== undefined && !between(s.adaptiveIntensity, 0, 100)) || (s.djIntensity !== undefined && !between(s.djIntensity, 0, 100)) || (s.modeId !== undefined && (typeof s.modeId !== 'string' || s.modeId.length > 100)) || !Array.isArray(s.gains) || s.gains.length !== 10 || !s.gains.every(g => between(g, -12, 12)) ||
+  if (!s || (s.adaptive !== undefined && typeof s.adaptive !== 'boolean') || (s.adaptiveIntensity !== undefined && !between(s.adaptiveIntensity, 0, 100)) ||
+    (s.surround !== undefined && typeof s.surround !== 'boolean') || (s.surroundAmount !== undefined && !between(s.surroundAmount, 0, 100)) || (s.voiceFocus !== undefined && !between(s.voiceFocus, 0, 100)) || (s.djIntensity !== undefined && !between(s.djIntensity, 0, 100)) || (s.modeId !== undefined && (typeof s.modeId !== 'string' || s.modeId.length > 100)) || !Array.isArray(s.gains) || s.gains.length !== 10 || !s.gains.every(g => between(g, -12, 12)) ||
     typeof s.preset !== 'string' || s.preset.length > 80 || !['off','studio','hall','cathedral'].includes(s.room) ||
     !between(s.mix, 0, 1) || !between(s.speed, 0.2, 2) || !between(s.elevation, -1, 1) ||
     !between(s.position?.x, -1, 1) || !between(s.position?.z, -1, 1) ||
