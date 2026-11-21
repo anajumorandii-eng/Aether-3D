@@ -38,6 +38,13 @@ export class VirtualSurround {
   private focus = 0.7;
   private punch = 0.3;
   private autoMixer = new AutoMixer();
+  // Passeio 8D: two oscillators (cos, sin of the rotation angle) steer the speaker positions on the
+  // audio thread, so the sound keeps circling even when the page is in the background.
+  private walk = false;
+  private walkSpeed = 0.4;
+  private walkMix: GainNode[] = [];
+  private walkOscillators: OscillatorNode[] = [];
+  private walkStatic: { panner: PannerNode; x: number; z: number }[] = [];
   private autoMix = true;
   private surgeStart = 0;
   private surgeLength = 0;
@@ -85,7 +92,13 @@ export class VirtualSurround {
       const split = ctx.createChannelSplitter(7);
       source.connect(node); node.connect(split);
 
-      const speaker = (azimuth: number) => {
+      const cos = ctx.createOscillator(); cos.setPeriodicWave(ctx.createPeriodicWave(new Float32Array([0, 1]), new Float32Array([0, 0])));
+      const sin = ctx.createOscillator(); sin.type = 'sine';
+      const walkCos = ctx.createGain(); const walkSin = ctx.createGain(); walkCos.gain.value = walkSin.gain.value = 0;
+      cos.connect(walkCos); sin.connect(walkSin);
+      this.walkOscillators = [cos, sin]; this.walkMix = [walkCos, walkSin];
+      const start = ctx.currentTime + 0.05; cos.start(start); sin.start(start);
+      const speaker = (azimuth: number, rotates = true) => {
         const panner = ctx.createPanner();
         panner.panningModel = 'HRTF';
         panner.distanceModel = 'linear';
@@ -93,10 +106,18 @@ export class VirtualSurround {
         const rad = (azimuth * Math.PI) / 180;
         if (panner.positionX) { panner.positionX.value = Math.sin(rad); panner.positionY.value = 0; panner.positionZ.value = -Math.cos(rad); }
         else panner.setPosition(Math.sin(rad), 0, -Math.cos(rad));
+        if (rotates && panner.positionX) {
+          // Rotated by θ: x = sin(a)cosθ + cos(a)sinθ, z = -cos(a)cosθ + sin(a)sinθ.
+          const sa = Math.sin(rad); const ca = Math.cos(rad);
+          ([[walkCos, panner.positionX, sa], [walkSin, panner.positionX, ca], [walkCos, panner.positionZ, -ca], [walkSin, panner.positionZ, sa]] as const)
+            .forEach(([source, target, k]) => { const g = ctx.createGain(); g.gain.value = k; source.connect(g); g.connect(target); });
+          this.walkStatic.push({ panner, x: sa, z: -ca });
+        }
         const gain = ctx.createGain(); gain.connect(panner); panner.connect(trim);
         return gain;
       };
-      const [fl, fr, c, sl, sr, bl, br] = SPEAKERS.map(s => speaker(s.azimuth));
+      // The voice stays in front; instruments and ambience walk around the head.
+      const [fl, fr, c, sl, sr, bl, br] = SPEAKERS.map(s => speaker(s.azimuth, s.id !== 'C'));
       this.frontGains = [fl, fr]; this.centerGain = c; this.sideGains = [sl, sr]; this.backGains = [bl, br];
       split.connect(fl, 0); split.connect(fr, 1);
       // The voice: a presence lift, then two paths. A frontal HRTF speaker tends to sound distant and
@@ -133,6 +154,7 @@ export class VirtualSurround {
       reflections.connect(this.reflectionGain); this.reflectionGain.connect(trim);
 
       this.applyLevels(true);
+      this.applyWalk(true);
       this.analysis.status = 'ready';
     } catch {
       this.analysis.status = 'error';
@@ -169,6 +191,20 @@ export class VirtualSurround {
   setAmount(amount: number) { this.amount = Math.max(0, Math.min(1, amount)); this.applyLevels(); }
   setFocus(focus: number) { this.focus = Math.max(0, Math.min(1, focus)); this.applyLevels(); }
   setPunch(punch: number) { this.punch = Math.max(0, Math.min(1, punch)); this.applyLevels(); }
+  /** Passeio 8D: instruments and ambience circle the head; the voice stays in front. */
+  setWalk(enabled: boolean) { this.walk = enabled; this.applyWalk(); }
+  /** 0–1: one turn every 30 s (slow) to every 6 s (fast). */
+  setWalkSpeed(speed: number) { this.walkSpeed = Math.max(0, Math.min(1, speed)); this.applyWalk(); }
+  private applyWalk(immediate = false) {
+    const ctx = this.ctx; if (!ctx || this.walkMix.length < 2) return;
+    const t = ctx.currentTime; const m = this.walk ? 1 : 0; const tau = immediate ? 0.001 : 0.5;
+    const rate = 1 / (30 - 24 * this.walkSpeed);
+    this.walkOscillators.forEach(o => o.frequency.setTargetAtTime(rate, t, immediate ? 0.001 : 0.3));
+    this.walkMix.forEach(g => g.gain.setTargetAtTime(m, t, tau));
+    // The fixed position fades out as the rotating one fades in.
+    for (const { panner, x, z } of this.walkStatic) { panner.positionX.setTargetAtTime(x * (1 - m), t, tau); panner.positionZ.setTargetAtTime(z * (1 - m), t, tau); }
+  }
+
   /** When Spotify reports song changes, the audio only counts a clear gap, not a change of character. */
   setNoveltyDetection(enabled: boolean) { this.autoMixer.detectNovelty = enabled; }
   setAutoMix(enabled: boolean) { this.autoMix = enabled; if (!enabled) this.autoMixer.reset(); this.applyLevels(); }

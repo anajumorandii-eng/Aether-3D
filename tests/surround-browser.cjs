@@ -42,6 +42,26 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     assert(back.surround < 0.01 && back.adaptive > 0.99, 'turning Cinema off returns to adaptive stereo');
     console.log('Real AudioWorklet: voice to center, surround routing, audible output, and return to adaptive: OK');
 
+    // Passeio 8D: a sound only in the left channel must travel to the right ear and back.
+    const walkRange = await p.evaluate(async () => {
+      const ctx = engine.ctx; const other = new AudioContext(); const osc = other.createOscillator(); osc.frequency.value = 500;
+      const merger = other.createChannelMerger(2); osc.connect(merger, 0, 0); const dest = other.createMediaStreamDestination(); merger.connect(dest); osc.start();
+      engine.setSurroundEnabled(true); engine.setAutoMix(false); await engine.attachStream(dest.stream);
+      const split = ctx.createChannelSplitter(2); engine.limiterNode.connect(split);
+      const aL = ctx.createAnalyser(), aR = ctx.createAnalyser(); split.connect(aL, 0); split.connect(aR, 1);
+      const rms = a => { const b = new Float32Array(a.fftSize); a.getFloatTimeDomainData(b); return Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length); };
+      const sample = async seconds => { const r = []; for (let i = 0; i < seconds * 10; i++) { await new Promise(x => setTimeout(x, 100)); r.push(rms(aL) / (rms(aR) + 1e-9)); } return r; };
+      await new Promise(x => setTimeout(x, 800));
+      const fixed = await sample(2);
+      engine.setWalkSpeed(100); engine.setWalk(true);
+      const walking = await sample(7);
+      engine.setWalk(false); engine.setAutoMix(true); engine.detachStream(); other.close();
+      return { fixedMin: Math.min(...fixed), walkMin: Math.min(...walking), walkMax: Math.max(...walking) };
+    });
+    assert(walkRange.fixedMin > 1.2, `without 8D the left sound stays left ${JSON.stringify(walkRange)}`);
+    assert(walkRange.walkMin < 0.85 && walkRange.walkMax > 1.2, `with 8D it crosses to the right and back ${JSON.stringify(walkRange)}`);
+    console.log('Passeio 8D: a left-only sound circles to the right ear and back: OK');
+
     // Live stream through the same chain (stands in for a captured tab or a virtual cable).
     await p.evaluate(async () => {
       engine.setSurroundEnabled(true);

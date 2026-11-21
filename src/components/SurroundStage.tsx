@@ -3,12 +3,13 @@ import { SPEAKERS, type SurroundAnalysis } from '../audio/VirtualSurround';
 import { Range, Toggle } from './ui';
 
 /** Cinema 7.1: seven virtual speakers around the head, the voice isolated in front. */
-export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status }: {
+export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status, walk, walkSpeed, onWalk, onWalkSpeed }: {
   readAnalysis: () => SurroundAnalysis | null; playing: boolean; enabled: boolean;
   amount: number; focus: number; punch: number; onAmount: (value: number) => void; onFocus: (value: number) => void; onPunch: (value: number) => void;
   autoMix: boolean; onAutoMix: (enabled: boolean) => void; transitions: boolean; onTransitions: (enabled: boolean) => void;
   /** How song changes are being timed while playing live; null otherwise. */
   status?: string | null;
+  walk: boolean; walkSpeed: number; onWalk: (enabled: boolean) => void; onWalkSpeed: (value: number) => void;
 }) {
   const [analysis, setAnalysis] = useState<SurroundAnalysis | null>(null);
   useEffect(() => { const read = () => setAnalysis(readAnalysis()); read(); const timer = window.setInterval(read, 400); return () => clearInterval(timer); }, [readAnalysis]);
@@ -20,11 +21,18 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
     <div className="relative h-44 border-y border-line-strong overflow-hidden" aria-hidden="true">
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full border border-line-strong" />
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-ink-faint" />
-      {SPEAKERS.map(s => {
+      {SPEAKERS.filter(s => s.id === 'C' || !walk).map(s => {
         const rad = (s.azimuth * Math.PI) / 180;
         return <span key={s.id} className="absolute -translate-x-1/2 -translate-y-1/2 font-mono text-[10px] text-accent transition-opacity duration-500"
           style={{ left: `calc(50% + ${Math.sin(rad) * 70}px)`, top: `calc(50% - ${Math.cos(rad) * 62}px)`, opacity: level(s.id) }}>{s.id}</span>;
       })}
+      {walk && <div className="absolute inset-0 motion-safe:animate-spin" style={{ animationDuration: `${Math.round(30 - 0.24 * walkSpeed)}s` }}>
+        {SPEAKERS.filter(s => s.id !== 'C').map(s => {
+          const rad = (s.azimuth * Math.PI) / 180;
+          return <span key={s.id} className="absolute -translate-x-1/2 -translate-y-1/2 font-mono text-[10px] text-accent"
+            style={{ left: `calc(50% + ${Math.sin(rad) * 70}px)`, top: `calc(50% - ${Math.cos(rad) * 62}px)`, opacity: level(s.id) }}>{s.id}</span>;
+        })}
+      </div>}
     </div>
     <p role="status" className="text-sm text-ink-muted leading-relaxed mt-4">{unavailable ? 'O Cinema 7.1 não está disponível neste navegador. O áudio está sendo preservado em estéreo.' : !enabled ? 'Efeito desligado. Reprodução em estéreo.' : !playing ? 'Inicie uma música para separar voz e ambiência.' : !measured ? 'Separando voz e ambiência…' : 'Voz perto, à frente. Ambiência nas laterais e atrás.'}</p>
     {measured && <dl className="grid grid-cols-2 gap-4 text-xs mt-4"><div><dt className="text-ink-muted">Voz no centro</dt><dd className="font-mono text-ink mt-1">{Math.round(analysis.center * 100)}%</dd></div><div><dt className="text-ink-muted">Ambiência ao redor</dt><dd className="font-mono text-ink mt-1">{Math.round(analysis.ambience * 100)}%</dd></div></dl>}
@@ -32,6 +40,8 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
     <div className="mt-4"><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Envolvimento</span><span>{amount}%</span></div><Range label="Envolvimento" min={0} max={100} step={1} value={amount} onChange={onAmount} disabled={!enabled || unavailable} /></div>
     <div className="mt-4"><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Impacto dos graves</span><span>{punch}%</span></div><Range label="Impacto dos graves" min={0} max={100} step={1} value={punch} onChange={onPunch} disabled={!enabled || unavailable} /></div>
     <div className="mt-5 border-t border-line-strong pt-4 space-y-3">
+      <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Passeio 8D: o som gira ao redor da cabeça</span><Toggle checked={walk} onChange={onWalk} label="Passeio 8D" /></div>
+      {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Velocidade do passeio</span><span>uma volta a cada {Math.round(30 - 0.24 * walkSpeed)} s</span></div><Range label="Velocidade do passeio" min={0} max={100} step={1} value={walkSpeed} onChange={onWalkSpeed} disabled={!enabled || unavailable} /></div>}
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>DJ ao vivo: mixar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="DJ ao vivo: mixar cada música" /></div>
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Transições de DJ</span><Toggle checked={transitions} onChange={onTransitions} label="Transições de DJ" /></div>
       {transitions && status && <p role="status" className="text-xs text-ink-muted">{status}</p>}

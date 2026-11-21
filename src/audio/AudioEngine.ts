@@ -298,6 +298,10 @@ export class SpatialAudioEngine {
     return true;
   }
 
+  /** Passeio 8D in the surround renderer. */
+  public setWalk(enabled: boolean) { this.surround.setWalk(enabled); }
+  /** Speed of the 8D walk, 0–100. */
+  public setWalkSpeed(value: number) { this.surround.setWalkSpeed(value / 100); }
   /** Sub-bass impact in the surround renderer, 0–100. */
   public setBassPunch(value: number) { this.surround.setPunch(value / 100); }
   public getSurroundAnalysis() { return { ...this.surround.analysis }; }

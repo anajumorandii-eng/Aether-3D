@@ -105,6 +105,8 @@ export default function App() {
   const [voiceFocus, setVoiceFocus] = useState(70);
   const [bassPunch, setBassPunch] = useState(30);
   const [autoMix, setAutoMix] = useState(true);
+  const [walk8d, setWalk8d] = useState(false);
+  const [walkSpeed, setWalkSpeed] = useState(40);
   const [djTransitions, setDjTransitions] = useState(true);
   const [liveNow, setLiveNow] = useState<SpotifyNowPlaying | null>(null);
   const [liveTiming, setLiveTiming] = useState<{ source: 'spotify' | 'audio'; error?: string }>({ source: 'audio' });
@@ -169,8 +171,8 @@ export default function App() {
   notifyRef.current = notify;
 
   // ---------- Reprodução ----------
-  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus, bassPunch, autoMix, djTransitions });
-  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus, bassPunch, autoMix, djTransitions };
+  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus, bassPunch, autoMix, djTransitions, walk8d, walkSpeed });
+  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus, bassPunch, autoMix, djTransitions, walk8d, walkSpeed };
 
   /** Applies every current sound setting to the engine (before a file or a live source starts). */
   const applyEngineSettings = useCallback((engine: SpatialAudioEngine) => {
@@ -185,6 +187,8 @@ export default function App() {
     engine.setVoiceFocus(s.voiceFocus);
     engine.setBassPunch(s.bassPunch);
     engine.setAutoMix(s.autoMix);
+    engine.setWalk(s.walk8d);
+    engine.setWalkSpeed(s.walkSpeed);
     engine.setDjTransitions(s.djTransitions);
     engine.resetAdaptiveAnalysis();
     engine.resetSurroundAnalysis();
@@ -397,7 +401,7 @@ export default function App() {
     mode.eq.gains.every((gain, i) => gain === eqGains[i]) &&
     mode.room === roomType && mode.mix === reverbMix && mode.spatial === spatialEnabled && mode.night === nightMode &&
     Boolean(mode.adaptive) === adaptiveEnabled &&
-    Boolean(mode.surround) === surroundEnabled && (!mode.surround || (mode.surroundAmount === surroundAmount && mode.voiceFocus === voiceFocus && (mode.bassPunch ?? 30) === bassPunch)) &&
+    Boolean(mode.surround) === surroundEnabled && (!mode.surround || (mode.surroundAmount === surroundAmount && mode.voiceFocus === voiceFocus && (mode.bassPunch ?? 30) === bassPunch && Boolean(mode.walk8d) === walk8d && (!mode.walk8d || (mode.walkSpeed ?? 40) === walkSpeed))) &&
     (mode.adaptive ? mode.adaptiveIntensity === adaptiveIntensity : mode.elevation === elevation && mode.position.x === pos.x && mode.position.z === pos.z),
   );
 
@@ -405,6 +409,8 @@ export default function App() {
   const changeSurroundAmount = (value: number) => { setSurroundAmount(value); engineRef.current?.setSurroundAmount(value); };
   const changeVoiceFocus = (value: number) => { setVoiceFocus(value); engineRef.current?.setVoiceFocus(value); };
   const changeBassPunch = (value: number) => { setBassPunch(value); engineRef.current?.setBassPunch(value); };
+  const changeWalk = (enabled: boolean) => { setWalk8d(enabled); engineRef.current?.setWalk(enabled); };
+  const changeWalkSpeed = (value: number) => { setWalkSpeed(value); engineRef.current?.setWalkSpeed(value); };
   const changeAutoMix = (enabled: boolean) => { setAutoMix(enabled); engineRef.current?.setAutoMix(enabled); };
   const changeDjTransitions = (enabled: boolean) => { setDjTransitions(enabled); engineRef.current?.setDjTransitions(enabled); };
 
@@ -418,6 +424,8 @@ export default function App() {
     changeSurroundAmount(mode.surroundAmount ?? 70);
     changeVoiceFocus(mode.voiceFocus ?? 70);
     changeBassPunch(mode.bassPunch ?? 30);
+    changeWalk(mode.walk8d ?? false);
+    changeWalkSpeed(mode.walkSpeed ?? 40);
     if (mode.djIntensity !== undefined) setDjIntensity(mode.djIntensity);
     setPreferredModeId(mode.id);
     selectPreset(mode.eq.name, [...mode.eq.gains]);
@@ -445,7 +453,7 @@ export default function App() {
       description: 'Sua configuração de áudio.', eq: { name: activePreset, gains: [...eqGains] },
       room: roomType, mix: reverbMix, orbit: autoOrbit, speed: orbitSpeed,
       position: { ...pos }, elevation, spatial: spatialEnabled, night: nightMode,
-      adaptive: adaptiveEnabled, adaptiveIntensity, surround: surroundEnabled, surroundAmount, voiceFocus, bassPunch,
+      adaptive: adaptiveEnabled, adaptiveIntensity, surround: surroundEnabled, surroundAmount, voiceFocus, bassPunch, walk8d, walkSpeed,
       ...((preferredModeId === 'dj' || activeMode?.djIntensity !== undefined) ? { djIntensity } : {}),
     };
     const next = existing ? customModes.map(m => m.id === mode.id ? mode : m) : [...customModes, mode];
@@ -887,7 +895,7 @@ export default function App() {
   const accountSettings: AccountSettings = {
     sound: JSON.stringify({ modeId: preferredModeId, djIntensity, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
       spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed, adaptive: adaptiveEnabled, adaptiveIntensity,
-      surround: surroundEnabled, surroundAmount, voiceFocus, bassPunch, autoMix, djTransitions, position: pos, elevation }),
+      surround: surroundEnabled, surroundAmount, voiceFocus, bassPunch, autoMix, djTransitions, walk8d, walkSpeed, position: pos, elevation }),
     customModes: JSON.stringify(customModes), spotify: JSON.stringify({ playlistId: selectedPlaylist, refreshRevision: spotifyRefreshRevision }), cloudUrl: cloudUrl ?? '',
   };
   const applyAccountSettings = (patch: SettingsPatch) => {
@@ -901,7 +909,7 @@ export default function App() {
       setSpatialEnabled(sound.spatial); setNightMode(sound.night);
       setAdaptiveEnabled(adaptive); setAdaptiveIntensity(intensity);
       engineRef.current?.setAdaptiveEnabled(adaptive); engineRef.current?.setAdaptiveIntensity(intensity);
-      changeSurround(sound.surround ?? false); changeSurroundAmount(sound.surroundAmount ?? 70); changeVoiceFocus(sound.voiceFocus ?? 70); changeBassPunch(sound.bassPunch ?? 30); changeAutoMix(sound.autoMix ?? true); changeDjTransitions(sound.djTransitions ?? true);
+      changeSurround(sound.surround ?? false); changeSurroundAmount(sound.surroundAmount ?? 70); changeVoiceFocus(sound.voiceFocus ?? 70); changeBassPunch(sound.bassPunch ?? 30); changeAutoMix(sound.autoMix ?? true); changeWalk(sound.walk8d ?? false); changeWalkSpeed(sound.walkSpeed ?? 40); changeDjTransitions(sound.djTransitions ?? true);
       setPos(sound.position); setElevation(sound.elevation);
       const engine = engineRef.current;
       engine?.applyPreset(sound.gains); engine?.setRoomType(sound.room); engine?.setReverbMix(sound.mix);
@@ -1094,7 +1102,7 @@ export default function App() {
             </div>
             <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Cinema 7.1 virtual</span><Toggle checked={surroundEnabled} onChange={changeSurround} label="Cinema 7.1 virtual" /></div>
             {!surroundEnabled && <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Adaptar à música</span><Toggle checked={adaptiveEnabled} onChange={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }} label="Adaptar à música" /></div>}
-            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} punch={bassPunch} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} onPunch={changeBassPunch} autoMix={autoMix} onAutoMix={changeAutoMix} transitions={djTransitions} onTransitions={changeDjTransitions} status={djStatus} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
+            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} punch={bassPunch} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} onPunch={changeBassPunch} autoMix={autoMix} onAutoMix={changeAutoMix} transitions={djTransitions} onTransitions={changeDjTransitions} status={djStatus} walk={walk8d} walkSpeed={walkSpeed} onWalk={changeWalk} onWalkSpeed={changeWalkSpeed} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
             <div inert={!spatialEnabled} className={`flex-1 grid place-items-center py-2 ${spatialEnabled ? '' : 'opacity-35'}`}>
               <SpatialStage
                 pos={pos}
@@ -1160,6 +1168,7 @@ export default function App() {
         surround={surroundEnabled} surroundAmount={surroundAmount} voiceFocus={voiceFocus}
         onSurround={changeSurround} onSurroundAmount={changeSurroundAmount} onVoiceFocus={changeVoiceFocus}
         bassPunch={bassPunch} onBassPunch={changeBassPunch}
+        walk={walk8d} onWalk={changeWalk} walkSpeed={walkSpeed} onWalkSpeed={changeWalkSpeed}
         onSpatial={enabled => { setSpatialEnabled(enabled); engineRef.current?.setSpatialEnabled(enabled); }}
         onNight={enabled => { setNightMode(enabled); engineRef.current?.setNightMode(enabled); }}
         onAdaptive={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }}

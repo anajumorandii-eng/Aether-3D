@@ -21,6 +21,9 @@ export interface ListeningMode {
   surroundAmount?: number;
   voiceFocus?: number;
   bassPunch?: number;
+  /** Passeio 8D: instruments and ambience circle the head, the voice stays in front. */
+  walk8d?: boolean;
+  walkSpeed?: number;
 }
 
 const base = { room: 'off' as RoomType, mix: 0, orbit: false, speed: 0.35, position: { x: 0, z: -0.35 }, elevation: 0, spatial: false, night: false };
@@ -41,6 +44,7 @@ export function createDjMode(value: number): ListeningMode {
     room: 'hall', mix: Number((0.28 * strength).toFixed(3)),
     spatial: true, adaptive: true, adaptiveIntensity: intensity, orbit: false,
     surround: true, surroundAmount: Math.round(55 + 0.45 * intensity), voiceFocus: Math.round(70 + 0.3 * intensity), bassPunch: intensity,
+    walk8d: intensity >= 50, walkSpeed: Math.round(20 + 0.3 * intensity),
     position: { x: 0, z: -0.5 },
   };
 }
@@ -59,5 +63,5 @@ export const LISTENING_MODES: ListeningMode[] = [
 
 /** Upgrade old rotating presets without discarding a user's EQ or room settings. */
 export function upgradeListeningMode(mode: ListeningMode): ListeningMode {
-  return { ...mode, orbit: false, surround: mode.surround ?? false, surroundAmount: mode.surroundAmount ?? 70, voiceFocus: mode.voiceFocus ?? 70, bassPunch: mode.bassPunch ?? 30, adaptive: mode.adaptive ?? (mode.orbit || mode.id === 'immersive' || mode.id === 'dj' || mode.djIntensity !== undefined), adaptiveIntensity: mode.adaptiveIntensity ?? mode.djIntensity ?? 65 };
+  return { ...mode, orbit: false, surround: mode.surround ?? false, surroundAmount: mode.surroundAmount ?? 70, voiceFocus: mode.voiceFocus ?? 70, bassPunch: mode.bassPunch ?? 30, walk8d: mode.walk8d ?? false, walkSpeed: mode.walkSpeed ?? 40, adaptive: mode.adaptive ?? (mode.orbit || mode.id === 'immersive' || mode.id === 'dj' || mode.djIntensity !== undefined), adaptiveIntensity: mode.adaptiveIntensity ?? mode.djIntensity ?? 65 };
 }
