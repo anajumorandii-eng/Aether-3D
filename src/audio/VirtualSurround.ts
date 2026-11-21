@@ -27,6 +27,11 @@ export class VirtualSurround {
   private generation = 0;
   private amount = 0.7;
   private focus = 0.7;
+  private punch = 0.3;
+  private centerClose: GainNode | null = null;
+  private presence: BiquadFilterNode | null = null;
+  private bassShelf: BiquadFilterNode | null = null;
+  private bassGain: GainNode | null = null;
   private active = false;
   private centerGain: GainNode | null = null;
   private frontGains: GainNode[] = [];
@@ -73,7 +78,14 @@ export class VirtualSurround {
       };
       const [fl, fr, c, sl, sr, bl, br] = SPEAKERS.map(s => speaker(s.azimuth));
       this.frontGains = [fl, fr]; this.centerGain = c; this.sideGains = [sl, sr]; this.backGains = [bl, br];
-      split.connect(fl, 0); split.connect(fr, 1); split.connect(c, 2);
+      split.connect(fl, 0); split.connect(fr, 1);
+      // The voice: a presence lift, then two paths. A frontal HRTF speaker tends to sound distant and
+      // dull with generic HRTFs, so with more focus the voice moves to a direct path, equal in both
+      // ears: close, "in your face", the way a DJ or club mix presents it.
+      this.presence = ctx.createBiquadFilter(); this.presence.type = 'peaking';
+      this.presence.frequency.value = 3200; this.presence.Q.value = 0.9;
+      this.centerClose = ctx.createGain(); this.centerClose.connect(trim);
+      split.connect(this.presence, 2); this.presence.connect(c); this.presence.connect(this.centerClose);
       split.connect(sl, 3); split.connect(sr, 4);
       // Rear speakers: the same ambience, delayed and darker, so sides and rears do not fuse.
       [[3, bl, 0.013], [4, br, 0.019]].forEach(([channel, target, delay]) => {
@@ -83,7 +95,9 @@ export class VirtualSurround {
       });
       // Bass straight to both ears, outside the HRTF stage.
       const bass = ctx.createChannelMerger(2);
-      split.connect(bass, 5, 0); split.connect(bass, 6, 1); bass.connect(trim);
+      this.bassShelf = ctx.createBiquadFilter(); this.bassShelf.type = 'lowshelf'; this.bassShelf.frequency.value = 70;
+      this.bassGain = ctx.createGain();
+      split.connect(bass, 5, 0); split.connect(bass, 6, 1); bass.connect(this.bassShelf); this.bassShelf.connect(this.bassGain); this.bassGain.connect(trim);
       // The chosen room's reverb arrives from the sides and rear.
       const roomSplit = ctx.createChannelSplitter(2); room.connect(roomSplit);
       const roomL = ctx.createGain(); const roomR = ctx.createGain(); roomL.gain.value = roomR.gain.value = 0.6;
@@ -92,7 +106,8 @@ export class VirtualSurround {
       // Early reflections of the front stage: cues the brain uses to place sound outside the head.
       const reflections = ctx.createConvolver(); reflections.normalize = false; reflections.buffer = earlyReflections(ctx);
       this.reflectionGain = ctx.createGain();
-      split.connect(reflections, 0); split.connect(reflections, 1); split.connect(reflections, 2);
+      // Fronts only: reflections on the voice would push it away.
+      split.connect(reflections, 0); split.connect(reflections, 1);
       reflections.connect(this.reflectionGain); this.reflectionGain.connect(trim);
 
       this.applyLevels(true);
@@ -103,13 +118,21 @@ export class VirtualSurround {
   }
 
   private applyLevels(immediate = false) {
-    const ctx = this.ctx; if (!ctx || !this.centerGain || !this.reflectionGain) return;
+    const ctx = this.ctx;
+    if (!ctx || !this.centerGain || !this.reflectionGain || !this.centerClose || !this.presence || !this.bassShelf || !this.bassGain) return;
     const set = (g: GainNode, v: number) => immediate ? (g.gain.value = v) : g.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
-    // Voice focus raises the center speaker up to about +3.5 dB and brings the fronts in slightly.
-    set(this.centerGain, 0.9 + 0.6 * this.focus);
-    this.frontGains.forEach(g => set(g, 1 - 0.15 * this.focus));
-    this.sideGains.forEach(g => set(g, 0.55 + 0.6 * this.amount));
-    this.backGains.forEach(g => set(g, 0.4 + 0.55 * this.amount));
+    const param = (p: AudioParam, v: number) => immediate ? (p.value = v) : p.setTargetAtTime(v, ctx.currentTime, 0.05);
+    // Voice focus: up to about +5.5 dB overall, mostly on the close path, with presence at 3.2 kHz.
+    const voice = 1 + 0.9 * this.focus; const close = 0.2 + 0.8 * this.focus;
+    set(this.centerClose, voice * close);
+    set(this.centerGain, voice * (1 - close) * 1.1);
+    param(this.presence.gain, 4.5 * this.focus);
+    this.frontGains.forEach(g => set(g, 1 - 0.3 * this.focus));
+    this.sideGains.forEach(g => set(g, 0.55 + 0.75 * this.amount));
+    this.backGains.forEach(g => set(g, 0.45 + 0.7 * this.amount));
+    // Bass impact: a sub shelf up to +7 dB and a little more level, outside the HRTF stage.
+    param(this.bassShelf.gain, 7 * this.punch);
+    set(this.bassGain, 1 + 0.25 * this.punch);
     set(this.reflectionGain, 0.08 + 0.1 * this.amount);
     const now = ctx.currentTime;
     this.node?.parameters.get('amount')?.setTargetAtTime(this.amount, now, 0.08);
@@ -118,6 +141,7 @@ export class VirtualSurround {
 
   setAmount(amount: number) { this.amount = Math.max(0, Math.min(1, amount)); this.applyLevels(); }
   setFocus(focus: number) { this.focus = Math.max(0, Math.min(1, focus)); this.applyLevels(); }
+  setPunch(punch: number) { this.punch = Math.max(0, Math.min(1, punch)); this.applyLevels(); }
   /** The worklet skips its FFTs while another route is playing, to save battery. */
   setActive(active: boolean) {
     if (active === this.active) return;

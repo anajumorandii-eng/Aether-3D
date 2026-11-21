@@ -118,7 +118,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     for (let n = 0; n < N; n++) { re[n] = this.inL[n] * w[n]; im[n] = this.inR[n] * w[n]; }
     this.fft(re, im);
     const [FL, FR, C, AL, AR, BL, BR] = this.spec;
-    const smooth = 0.7; const strength = 0.45 + 0.55 * focus;
+    const smooth = 0.7; const strength = 0.6 + 0.4 * focus;
     for (let k = 0; k < BINS; k++) {
       const nk = (N - k) % N;
       // Two real spectra from one complex FFT.
@@ -137,7 +137,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       // A source panned to one side is direct sound, not ambience, even though it is "incoherent".
       const balance = (2 * Math.sqrt(this.pLL[k] * this.pRR[k])) / (sum + 1e-20);
       const bass = this.bass[k]; const rest = 1 - bass;
-      let mc = Math.max(0, Math.min(1, (similarity * inPhase - 0.5) / 0.42)) * this.voiceBand[k] * strength;
+      let mc = Math.max(0, Math.min(1, (similarity * inPhase - 0.4) / 0.45)) * this.voiceBand[k] * strength;
       let ma = Math.max(0, Math.min(1, (1 - coherence) * balance * 1.25)) * amount;
       if (sum < 1e-14) { mc = 0; ma = 0; }
       this.centerMask[k] = 0.5 * this.centerMask[k] + 0.5 * mc;

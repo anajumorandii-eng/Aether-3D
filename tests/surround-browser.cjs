@@ -59,15 +59,19 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     const saved = await p.evaluate(() => JSON.parse(localStorage.getItem('aether_custom_modes_v1')));
     assert.equal(saved[0].surround, true); assert.equal(saved[0].voiceFocus, 85); assert.equal(saved[0].surroundAmount, 70);
     await p.getByRole('button', { name: 'Testar som 3D' }).click();
-    await p.getByText('Voz no centro, à frente. Ambiência nas laterais e atrás.', { exact: true }).waitFor({ timeout: 15000 });
+    await p.getByText('Voz perto, à frente. Ambiência nas laterais e atrás.', { exact: true }).waitFor({ timeout: 15000 });
     await p.getByRole('heading', { name: 'Ao vivo · Computador' }).waitFor();
     assert.equal(await p.getByRole('button', { name: 'Capturar aba do Spotify' }).count(), 1);
-    await p.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/desktop.png` : '/dev/null' });
+    if (process.env.SHOT_DIR) await p.screenshot({ path: `${process.env.SHOT_DIR}/desktop.png` });
     console.log('Cinema 7.1 UI, saved custom mode with voice focus, live panel on desktop: OK');
+    await p.getByRole('button', { name: 'DJ 3D', exact: true }).click();
+    assert.equal(await p.getByRole('switch', { name: 'Cinema 7.1 virtual' }).getAttribute('aria-checked'), 'true', 'DJ 3D uses the full surround renderer');
+    assert.equal(await p.getByRole('slider', { name: 'Impacto dos graves', exact: true }).inputValue(), '65');
+    console.log('DJ 3D: full immersion with voice focus and bass impact: OK');
 
     for (const width of [320, 390, 768, 1440]) { await p.setViewportSize({ width, height: 900 }); assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `no horizontal scroll at ${width}`); }
     await p.setViewportSize({ width: 390, height: 844 });
-    await p.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/mobile.png` : '/dev/null', fullPage: true });
+    if (process.env.SHOT_DIR) await p.screenshot({ path: `${process.env.SHOT_DIR}/mobile.png`, fullPage: true });
     assert.deepEqual(errors, []);
   } finally { await b.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

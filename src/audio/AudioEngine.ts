@@ -216,6 +216,8 @@ export class SpatialAudioEngine {
   public setSurroundAmount(value: number) { this.surround.setAmount(value / 100); }
   /** How far forward and close the voice sits, 0–100. */
   public setVoiceFocus(value: number) { this.surround.setFocus(value / 100); }
+  /** Sub-bass impact in the surround renderer, 0–100. */
+  public setBassPunch(value: number) { this.surround.setPunch(value / 100); }
   public getSurroundAnalysis() { return { ...this.surround.analysis }; }
   public resetSurroundAnalysis() { this.surround.reset(); }
 

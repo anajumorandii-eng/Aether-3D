@@ -29,6 +29,8 @@ interface Props {
   onSurround: (enabled: boolean) => void;
   onSurroundAmount: (value: number) => void;
   onVoiceFocus: (value: number) => void;
+  bassPunch: number;
+  onBassPunch: (value: number) => void;
   position: { x: number; z: number };
   onPosition: (position: { x: number; z: number }) => void;
   elevation: number;
@@ -61,6 +63,7 @@ export function CustomizeSound(p: Props) {
           ].map(([label, checked, change]) => <div key={String(label)} className="flex justify-between items-center gap-3 text-sm"><span>{String(label)}</span><Toggle label={String(label)} checked={Boolean(checked)} onChange={change as (v: boolean) => void} /></div>)}
           <p className="text-xs text-ink-muted">O modo noturno comprime os picos. Desligar o 3D mantém o estéreo. A adaptação preserva o centro da mixagem, sem rotação. O Cinema 7.1 tem prioridade sobre a adaptação e o posicionamento manual.</p>
           <Field label="Voz à frente" value={`${p.voiceFocus}%`}><Range label="Voz à frente personalizada" min={0} max={100} step={1} value={p.voiceFocus} onChange={p.onVoiceFocus} disabled={!p.spatial || !p.surround} /></Field>
+          <Field label="Impacto dos graves" value={`${p.bassPunch}%`}><Range label="Impacto dos graves personalizado" min={0} max={100} step={1} value={p.bassPunch} onChange={p.onBassPunch} disabled={!p.spatial || !p.surround} /></Field>
           <Field label="Envolvimento" value={`${p.surroundAmount}%`}><Range label="Envolvimento personalizado" min={0} max={100} step={1} value={p.surroundAmount} onChange={p.onSurroundAmount} disabled={!p.spatial || !p.surround} /></Field>
           <Field label="Intensidade da adaptação" value={`${p.adaptiveIntensity}%`}><Range label="Intensidade adaptativa personalizada" min={0} max={100} step={1} value={p.adaptiveIntensity} onChange={p.onAdaptiveIntensity} disabled={!p.spatial || p.surround || !p.adaptive} /></Field>
           <Field label="Posição lateral" value={p.position.x.toFixed(1)}><Range label="Posição lateral" min={-1} max={1} step={0.1} value={p.position.x} onChange={x => p.onPosition({ ...p.position, x })} disabled={!p.spatial || p.surround || p.adaptive} /></Field>

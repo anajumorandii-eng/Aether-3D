@@ -103,6 +103,7 @@ export default function App() {
   const [surroundEnabled, setSurroundEnabled] = useState(false);
   const [surroundAmount, setSurroundAmount] = useState(70);
   const [voiceFocus, setVoiceFocus] = useState(70);
+  const [bassPunch, setBassPunch] = useState(30);
 
   // Ao vivo (computador): aba do navegador ou entrada de áudio, sem salvar arquivos
   const [liveSource, setLiveSource] = useState<LiveSource | null>(null);
@@ -163,8 +164,8 @@ export default function App() {
   notifyRef.current = notify;
 
   // ---------- Reprodução ----------
-  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus });
-  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus };
+  const settingsRef = useRef({ eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus, bassPunch });
+  settingsRef.current = { eqGains, roomType, reverbMix, pos, elevation, volume, spatialEnabled, nightMode, adaptiveEnabled, adaptiveIntensity, surroundEnabled, surroundAmount, voiceFocus, bassPunch };
 
   /** Applies every current sound setting to the engine (before a file or a live source starts). */
   const applyEngineSettings = useCallback((engine: SpatialAudioEngine) => {
@@ -177,6 +178,7 @@ export default function App() {
     engine.setSurroundEnabled(s.surroundEnabled);
     engine.setSurroundAmount(s.surroundAmount);
     engine.setVoiceFocus(s.voiceFocus);
+    engine.setBassPunch(s.bassPunch);
     engine.resetAdaptiveAnalysis();
     engine.resetSurroundAnalysis();
     engine.setNightMode(s.nightMode);
@@ -377,13 +379,14 @@ export default function App() {
     mode.eq.gains.every((gain, i) => gain === eqGains[i]) &&
     mode.room === roomType && mode.mix === reverbMix && mode.spatial === spatialEnabled && mode.night === nightMode &&
     Boolean(mode.adaptive) === adaptiveEnabled &&
-    Boolean(mode.surround) === surroundEnabled && (!mode.surround || (mode.surroundAmount === surroundAmount && mode.voiceFocus === voiceFocus)) &&
+    Boolean(mode.surround) === surroundEnabled && (!mode.surround || (mode.surroundAmount === surroundAmount && mode.voiceFocus === voiceFocus && (mode.bassPunch ?? 30) === bassPunch)) &&
     (mode.adaptive ? mode.adaptiveIntensity === adaptiveIntensity : mode.elevation === elevation && mode.position.x === pos.x && mode.position.z === pos.z),
   );
 
   const changeSurround = (enabled: boolean) => { setSurroundEnabled(enabled); engineRef.current?.setSurroundEnabled(enabled); };
   const changeSurroundAmount = (value: number) => { setSurroundAmount(value); engineRef.current?.setSurroundAmount(value); };
   const changeVoiceFocus = (value: number) => { setVoiceFocus(value); engineRef.current?.setVoiceFocus(value); };
+  const changeBassPunch = (value: number) => { setBassPunch(value); engineRef.current?.setBassPunch(value); };
 
   const applyListeningMode = (rawMode: ListeningMode, announce = true) => {
     const mode = upgradeListeningMode(rawMode);
@@ -394,6 +397,7 @@ export default function App() {
     changeSurround(Boolean(mode.surround));
     changeSurroundAmount(mode.surroundAmount ?? 70);
     changeVoiceFocus(mode.voiceFocus ?? 70);
+    changeBassPunch(mode.bassPunch ?? 30);
     if (mode.djIntensity !== undefined) setDjIntensity(mode.djIntensity);
     setPreferredModeId(mode.id);
     selectPreset(mode.eq.name, [...mode.eq.gains]);
@@ -421,7 +425,7 @@ export default function App() {
       description: 'Sua configuração de áudio.', eq: { name: activePreset, gains: [...eqGains] },
       room: roomType, mix: reverbMix, orbit: autoOrbit, speed: orbitSpeed,
       position: { ...pos }, elevation, spatial: spatialEnabled, night: nightMode,
-      adaptive: adaptiveEnabled, adaptiveIntensity, surround: surroundEnabled, surroundAmount, voiceFocus,
+      adaptive: adaptiveEnabled, adaptiveIntensity, surround: surroundEnabled, surroundAmount, voiceFocus, bassPunch,
       ...((preferredModeId === 'dj' || activeMode?.djIntensity !== undefined) ? { djIntensity } : {}),
     };
     const next = existing ? customModes.map(m => m.id === mode.id ? mode : m) : [...customModes, mode];
@@ -825,7 +829,7 @@ export default function App() {
   const accountSettings: AccountSettings = {
     sound: JSON.stringify({ modeId: preferredModeId, djIntensity, gains: eqGains, preset: activePreset, room: roomType, mix: reverbMix,
       spatial: spatialEnabled, night: nightMode, orbit: autoOrbit, speed: orbitSpeed, adaptive: adaptiveEnabled, adaptiveIntensity,
-      surround: surroundEnabled, surroundAmount, voiceFocus, position: pos, elevation }),
+      surround: surroundEnabled, surroundAmount, voiceFocus, bassPunch, position: pos, elevation }),
     customModes: JSON.stringify(customModes), spotify: JSON.stringify({ playlistId: selectedPlaylist, refreshRevision: spotifyRefreshRevision }), cloudUrl: cloudUrl ?? '',
   };
   const applyAccountSettings = (patch: SettingsPatch) => {
@@ -839,7 +843,7 @@ export default function App() {
       setSpatialEnabled(sound.spatial); setNightMode(sound.night);
       setAdaptiveEnabled(adaptive); setAdaptiveIntensity(intensity);
       engineRef.current?.setAdaptiveEnabled(adaptive); engineRef.current?.setAdaptiveIntensity(intensity);
-      changeSurround(sound.surround ?? false); changeSurroundAmount(sound.surroundAmount ?? 70); changeVoiceFocus(sound.voiceFocus ?? 70);
+      changeSurround(sound.surround ?? false); changeSurroundAmount(sound.surroundAmount ?? 70); changeVoiceFocus(sound.voiceFocus ?? 70); changeBassPunch(sound.bassPunch ?? 30);
       setPos(sound.position); setElevation(sound.elevation);
       const engine = engineRef.current;
       engine?.applyPreset(sound.gains); engine?.setRoomType(sound.room); engine?.setReverbMix(sound.mix);
@@ -1023,7 +1027,7 @@ export default function App() {
             </div>
             <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Cinema 7.1 virtual</span><Toggle checked={surroundEnabled} onChange={changeSurround} label="Cinema 7.1 virtual" /></div>
             {!surroundEnabled && <div className="flex items-center justify-between gap-3 mt-3 text-xs text-ink-muted"><span>Adaptar à música</span><Toggle checked={adaptiveEnabled} onChange={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }} label="Adaptar à música" /></div>}
-            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
+            {surroundEnabled ? <SurroundStage readAnalysis={readSurroundAnalysis} playing={isPlaying} enabled={spatialEnabled} amount={surroundAmount} focus={voiceFocus} punch={bassPunch} onAmount={changeSurroundAmount} onFocus={changeVoiceFocus} onPunch={changeBassPunch} /> : adaptiveEnabled ? <AdaptiveStage readAnalysis={readAdaptiveAnalysis} playing={isPlaying} enabled={spatialEnabled} intensity={adaptiveIntensity} onIntensity={value => { setAdaptiveIntensity(value); engineRef.current?.setAdaptiveIntensity(value); }} /> : <>
             <div inert={!spatialEnabled} className={`flex-1 grid place-items-center py-2 ${spatialEnabled ? '' : 'opacity-35'}`}>
               <SpatialStage
                 pos={pos}
@@ -1088,6 +1092,7 @@ export default function App() {
         spatial={spatialEnabled} night={nightMode} adaptive={adaptiveEnabled} adaptiveIntensity={adaptiveIntensity}
         surround={surroundEnabled} surroundAmount={surroundAmount} voiceFocus={voiceFocus}
         onSurround={changeSurround} onSurroundAmount={changeSurroundAmount} onVoiceFocus={changeVoiceFocus}
+        bassPunch={bassPunch} onBassPunch={changeBassPunch}
         onSpatial={enabled => { setSpatialEnabled(enabled); engineRef.current?.setSpatialEnabled(enabled); }}
         onNight={enabled => { setNightMode(enabled); engineRef.current?.setNightMode(enabled); }}
         onAdaptive={enabled => { setAdaptiveEnabled(enabled); engineRef.current?.setAdaptiveEnabled(enabled); }}
