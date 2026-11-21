@@ -5,7 +5,11 @@
  *  - An input device (e.g. a virtual cable that the Spotify desktop app outputs to).
  * Voice processing is turned off: echo cancellation and gain control would damage music.
  */
-export interface LiveSource { kind: 'tab' | 'device'; label: string; stream: MediaStream }
+export interface LiveSource {
+  kind: 'tab' | 'device'; label: string; stream: MediaStream;
+  /** Set when the original sound is probably still playing too, which is heard as a doubled, echoing sound. */
+  warning?: string;
+}
 
 const MUSIC_AUDIO = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 } };
 
@@ -28,7 +32,15 @@ export async function captureTab(): Promise<LiveSource> {
     throw new Error('A aba foi escolhida sem áudio. Compartilhe de novo e deixe “Compartilhar áudio da guia” marcado.');
   }
   const label = stream.getVideoTracks()[0]?.label || 'Aba do navegador';
-  return { kind: 'tab', label, stream };
+  // Only a captured TAB can be muted locally. A window or a screen keeps playing as well: doubled sound.
+  const surface = (stream.getVideoTracks()[0]?.getSettings() as { displaySurface?: string } | undefined)?.displaySurface;
+  const suppressed = (audio.getSettings() as { suppressLocalAudioPlayback?: boolean }).suppressLocalAudioPlayback;
+  const warning = surface && surface !== 'browser'
+    ? 'Você compartilhou uma janela ou a tela, não uma aba: o Spotify original continua tocando junto (som dobrado). Pare e compartilhe a aba “Guia do Chrome” do Spotify.'
+    : suppressed === false
+      ? 'Este navegador não deixou a aba original muda: o som pode sair dobrado. Use o Chrome ou o Edge atualizados.'
+      : undefined;
+  return { kind: 'tab', label, stream, warning };
 }
 
 /** Asks for permission once, then lists inputs; a virtual cable is put first. */

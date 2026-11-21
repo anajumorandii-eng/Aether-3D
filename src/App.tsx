@@ -991,6 +991,7 @@ export default function App() {
       live={
         <LivePanel
           liveLabel={liveSource?.label ?? null}
+          liveWarning={liveSource?.warning}
           spotifyLinked={Boolean(spotifyToken) && hasScopes(['user-read-currently-playing'])}
           busy={liveBusy}
           error={liveError}
