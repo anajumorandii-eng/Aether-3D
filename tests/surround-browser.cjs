@@ -72,6 +72,23 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     });
     assert(locked.walk?.beats === 16 && Math.abs(locked.walk.period - 8) < 0.01 && Math.abs(locked.rate - 0.125) < 0.005, `walk locks to 120 BPM: ${JSON.stringify(locked)}`);
     console.log('Passeio 8D locks to the song tempo (120 BPM, 16 beats per turn): OK');
+    // Everything per song: a dull, reverberant song gets more air on the real EQ and less added room.
+    const perSong = await p.evaluate(async () => {
+      engine.setSurroundEnabled(true); engine.setAutoMix(true); engine.applyPreset([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      engine.setRoomType('studio'); engine.setReverbMix(0.3);
+      const s = engine.surround; s.generation += 1;
+      const report = { generation: s.generation, center: 0.3, ambience: 0.35, bass: 0.2, level: -18, tone: [0.4, 0.45, 0.13, 0.02], bpm: 72, beatConfidence: 0.6, frames: 48000 };
+      for (let i = 0; i < 30; i++) { s.node.port.onmessage({ data: report }); await new Promise(r => setTimeout(r, 100)); }
+      await new Promise(r => setTimeout(r, 2500));
+      const on = { air: engine.filters[8].gain.value, wet: engine.wetGain.gain.value, summary: engine.getSurroundAnalysis().adjust };
+      engine.setAutoMix(false); await new Promise(r => setTimeout(r, 2500));
+      const off = { air: engine.filters[8].gain.value, wet: engine.wetGain.gain.value };
+      engine.setAutoMix(true); engine.setRoomType('off'); engine.setReverbMix(0);
+      return { on, off };
+    });
+    assert(perSong.on.air > 1 && perSong.on.wet < 0.3 * 0.65 * 0.75, `per-song EQ and reverb applied ${JSON.stringify(perSong)}`);
+    assert(Math.abs(perSong.off.air) < 0.1 && Math.abs(perSong.off.wet - 0.3 * 0.65) < 0.01, `turning it off returns to the listener's settings ${JSON.stringify(perSong)}`);
+    console.log('Per-song EQ and reverb reach the real engine, and switch back off cleanly: OK');
     assert(walkRange.walkMin < 0.85 && walkRange.walkMax > 1.2, `with 8D it crosses to the right and back ${JSON.stringify(walkRange)}`);
     console.log('Passeio 8D: a left-only sound circles to the right ear and back: OK');
     // Imersão do 8D: at 100 even a centered sound (like the voice) travels ear to ear; at 0 it stays centered.
@@ -147,10 +164,10 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     await p.getByRole('button', { name: 'DJ 3D', exact: true }).click();
     assert.equal(await p.getByRole('switch', { name: 'Cinema 7.1 virtual' }).getAttribute('aria-checked'), 'true', 'DJ 3D uses the full surround renderer');
     assert.equal(await p.getByRole('slider', { name: 'Impacto dos graves', exact: true }).inputValue(), '65');
-    assert.equal(await p.getByRole('switch', { name: 'DJ ao vivo: mixar cada música' }).getAttribute('aria-checked'), 'true');
+    assert.equal(await p.getByRole('switch', { name: 'Personalizar cada música' }).getAttribute('aria-checked'), 'true');
     await p.getByRole('switch', { name: 'Transições de DJ' }).click();
     assert.equal(await p.getByRole('switch', { name: 'Transições de DJ' }).getAttribute('aria-checked'), 'false');
-    await p.getByText(/^Nesta música: Voz/).waitFor({ timeout: 15000 });
+    await p.getByText(/^Voz [+−]\d+ · Envolvimento/).waitFor({ timeout: 15000 });
     console.log('DJ 3D: full immersion with voice focus and bass impact: OK');
     await p.getByRole('button', { name: 'Íntimo', exact: true }).click();
     assert.equal(await p.getByRole('slider', { name: 'Voz à frente', exact: true }).inputValue(), '100');

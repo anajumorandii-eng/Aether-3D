@@ -1,6 +1,7 @@
 import { AdaptiveImmersion } from './AdaptiveImmersion';
 import { PlaybackSession } from './PlaybackSession';
 import { VirtualSurround } from './VirtualSurround';
+import type { SongAdjust } from './autoMix';
 
 export interface EQPreset {
   name: string;
@@ -45,6 +46,10 @@ export class SpatialAudioEngine {
   private spatialOn = true;
   private adaptiveOn = true;
   private surroundOn = false;
+  private userGains: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  private songEq: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  private songReverb = 1;
+  private reverbMix = 0;
   // Live DJ: a high-pass filter at the input for sweeps, and an echo bus for outros.
   private djFilter: BiquadFilterNode | null = null;
   private echoSend: GainNode | null = null;
@@ -177,6 +182,7 @@ export class SpatialAudioEngine {
     lastFilter.connect(this.echoSend); this.echoSend.connect(echo); echo.connect(dark); dark.connect(feedback); feedback.connect(echo);
     dark.connect(this.compressorNode);
     this.surround.onTrackGap = () => this.djTrackChange();
+    this.surround.onSongAdjust = adjust => this.applySongAdjust(adjust);
     this.compressorNode.connect(this.limiterNode);
     this.limiterNode.connect(this.analyserNode);
     this.analyserNode.connect(this.ctx.destination);
@@ -350,9 +356,25 @@ export class SpatialAudioEngine {
   }
 
   public setBandGain(index: number, gainDb: number) {
-    if (this.filters[index] && this.ctx) {
-      this.filters[index].gain.setTargetAtTime(gainDb, this.ctx.currentTime, 0.02);
-    }
+    this.userGains[index] = gainDb;
+    this.applyBand(index);
+  }
+
+  /** The listener's EQ plus this song's correction (when per-song mixing is on), within ±12 dB. */
+  private applyBand(index: number) {
+    if (!this.filters[index] || !this.ctx) return;
+    const gain = Math.max(-12, Math.min(12, (this.userGains[index] ?? 0) + (this.songEq[index] ?? 0)));
+    this.filters[index].gain.setTargetAtTime(gain, this.ctx.currentTime, this.songEq[index] ? 0.5 : 0.02);
+  }
+
+  /** Per-song EQ and reverb from the surround analysis; null returns to the listener's own settings. */
+  private applySongAdjust(adjust: SongAdjust | null) {
+    const eq = adjust?.eq ?? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const changed = eq.some((v, i) => Math.abs(v - (this.songEq[i] ?? 0)) > 0.05);
+    this.songEq = [...eq];
+    if (changed || !adjust) this.filters.forEach((_, i) => this.applyBand(i));
+    const reverb = adjust?.reverb ?? 1;
+    if (Math.abs(reverb - this.songReverb) > 0.02 || !adjust) { this.songReverb = reverb; this.setReverbMix(this.reverbMix); }
   }
 
   public applyPreset(gains: number[]) {
@@ -372,10 +394,12 @@ export class SpatialAudioEngine {
   }
 
   public setReverbMix(wetAmount: number) {
+    this.reverbMix = wetAmount;
     this.adaptive.setAmbience(wetAmount);
     if (!this.dryGain || !this.wetGain || !this.ctx) return;
     const clamped = Math.max(0, Math.min(1, wetAmount));
-    this.wetGain.gain.setTargetAtTime(clamped * 0.65, this.ctx.currentTime, 0.03);
+    // Per song: less added room for songs that already carry their own reverb.
+    this.wetGain.gain.setTargetAtTime(clamped * 0.65 * this.songReverb, this.ctx.currentTime, 0.3);
     this.dryGain.gain.setTargetAtTime(1 - clamped * 0.25, this.ctx.currentTime, 0.03);
   }
 

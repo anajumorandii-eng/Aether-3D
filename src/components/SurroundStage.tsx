@@ -3,6 +3,19 @@ import { SPEAKERS, type SurroundAnalysis } from '../audio/VirtualSurround';
 import { Range, Toggle } from './ui';
 
 /** Cinema 7.1: seven virtual speakers around the head, the voice isolated in front. */
+const signed = (v: number, unit = '') => `${v >= 0 ? '+' : '−'}${Math.abs(v)}${unit}`;
+/** Everything the per-song mix changed, in the words of the controls. */
+function songSummary(a: SurroundAnalysis): string {
+  const o = a.offsets!; const adj = a.adjust;
+  const parts = [`Voz ${signed(Math.round(o.focus * 100))}`, `Envolvimento ${signed(Math.round(o.amount * 100))}`, `Graves ${signed(Math.round(o.punch * 100))}`];
+  if (adj) {
+    const db = (i: number[]) => Math.round((i.reduce((s, k) => s + adj.eq[k], 0) / i.length) * 10) / 10;
+    parts.push(`Corpo ${signed(db([2, 3]), ' dB')}`, `Presença ${signed(db([6, 7]), ' dB')}`, `Brilho ${signed(db([8, 9]), ' dB')}`,
+      `Eco ${signed(Math.round((adj.reverb - 1) * 100), '%')}`, `8D ${signed(Math.round(adj.depth * 100))}`);
+  }
+  return parts.join(' · ');
+}
+
 export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, punch, onAmount, onFocus, onPunch, autoMix, onAutoMix, transitions, onTransitions, status, log, onTest, walk, walkSpeed, onWalk, onWalkSpeed, walkDepth, onWalkDepth }: {
   readAnalysis: () => SurroundAnalysis | null; playing: boolean; enabled: boolean;
   amount: number; focus: number; punch: number; onAmount: (value: number) => void; onFocus: (value: number) => void; onPunch: (value: number) => void;
@@ -48,8 +61,8 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
       {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Imersão do 8D</span><span>{walkDepth}%</span></div><Range label="Imersão do 8D" min={0} max={100} step={1} value={walkDepth} onChange={onWalkDepth} disabled={!enabled || unavailable} />
         <p className="text-xs text-ink-muted mt-2 mb-4">{walkDepth >= 60 ? 'A música inteira passa de um ouvido para o outro e fica mais abafada por trás. Os graves ficam no centro.' : 'Giram os instrumentos e a ambiência. A voz fica mais parada à frente.'}</p></div>}
       {walk && <div><div className="flex justify-between gap-3 text-xs text-ink-muted mb-2"><span>Velocidade do passeio</span><span>uma volta a cada {period.toFixed(1).replace('.', ',')} s</span></div><Range label="Velocidade do passeio" min={0} max={100} step={1} value={walkSpeed} onChange={onWalkSpeed} disabled={!enabled || unavailable} />
-        <p className="text-xs text-ink-muted mt-2">{plan?.beats ? `No ritmo da música: ${Math.round(analysis?.bpm ?? 0)} BPM · 1 volta a cada ${plan.beats} tempos, subindo e descendo` : autoMix ? 'Procurando a batida da música… até lá, gira na velocidade escolhida.' : 'Velocidade fixa. Ligue “DJ ao vivo: mixar cada música” para o giro seguir o ritmo.'}</p></div>}
-      <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>DJ ao vivo: mixar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="DJ ao vivo: mixar cada música" /></div>
+        <p className="text-xs text-ink-muted mt-2">{plan?.beats ? `No ritmo da música: ${Math.round(analysis?.bpm ?? 0)} BPM · 1 volta a cada ${plan.beats} tempos, subindo e descendo` : autoMix ? 'Procurando a batida da música… até lá, gira na velocidade escolhida.' : 'Velocidade fixa. Ligue “Personalizar cada música” para o giro seguir o ritmo.'}</p></div>}
+      <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Personalizar cada música</span><Toggle checked={autoMix} onChange={onAutoMix} label="Personalizar cada música" /></div>
       <div className="flex items-center justify-between gap-3 text-xs text-ink-muted"><span>Transições de DJ</span><Toggle checked={transitions} onChange={onTransitions} label="Transições de DJ" /></div>
       {transitions && status && <p role="status" className="text-xs text-ink-muted">{status}</p>}
       {transitions && onTest && <button type="button" onClick={onTest} disabled={!playing} className="w-full min-h-11 rounded-md border border-line-strong bg-raised/60 text-xs font-medium text-ink hover:bg-raised disabled:opacity-40 transition">Testar transição agora</button>}
@@ -57,7 +70,10 @@ export function SurroundStage({ readAnalysis, playing, enabled, amount, focus, p
         <summary className="cursor-pointer min-h-11 flex items-center">Registro do DJ</summary>
         <ol className="space-y-1 font-mono text-[11px]">{log.map((item, i) => <li key={`${item.at}-${i}`}><span className="text-ink-faint">{item.at}</span> {item.text}</li>)}</ol>
       </details>}
-      {autoMix && measured && analysis.offsets && <p className="text-xs text-ink-muted">Nesta música: <span className="font-mono text-ink">{[['Voz', analysis.offsets.focus], ['Envolvimento', analysis.offsets.amount], ['Graves', analysis.offsets.punch]].map(([label, v]) => `${label} ${Number(v) >= 0 ? '+' : '−'}${Math.abs(Math.round(Number(v) * 100))}`).join(' · ')}</span></p>}
+      {autoMix && measured && analysis.offsets && <div className="text-xs text-ink-muted">
+        <p>Nesta música{analysis.adjust?.character ? <> ({analysis.adjust.character})</> : null}:</p>
+        <p className="font-mono text-ink mt-1 leading-relaxed">{songSummary(analysis)}</p>
+      </div>}
       <p className="text-[11px] text-ink-muted leading-relaxed">Cada música recebe sua própria mixagem, a partir dos seus ajustes acima. Nas trocas, o filtro abre a partir dos graves e o fim da música anterior ecoa.</p>
     </div>
     <p className="text-[11px] text-ink-muted leading-relaxed mt-3">Separa a mixagem estéreo em 7 alto-falantes virtuais com HRTF, como um home theater nos fones. Não reconstrói uma mixagem Dolby Atmos original.</p>

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 (async () => {
-  const { AutoMixer, targetOffsets, walkPlan } = await import('../src/audio/autoMix.ts');
+  const { AutoMixer, targetOffsets, walkPlan, songAdjust } = await import('../src/audio/autoMix.ts');
   // A reverberant ballad: less added space, voice pulled forward.
   const ballad = targetOffsets({ center: 0.3, ambience: 0.35, bass: 0.2 });
   assert(ballad.amount < -0.2 && ballad.focus > 0, JSON.stringify(ballad));
@@ -41,5 +41,20 @@ const assert = require('node:assert/strict');
   assert.equal(walkPlan(8, 75, 0.8, 0.1).beats, 8);
   const free = walkPlan(12, 120, 0.1, 0.1); assert.equal(free.beats, null); assert.equal(free.period, 12);
   assert(walkPlan(12, 120, 0.8, 0.4).elevation > walkPlan(12, 120, 0.8, 0.05).elevation, 'airy songs move more up and down');
+  // Everything else per song: tone, reverb, 8D strength, and what the song is.
+  const thin = songAdjust({ center: 0.2, ambience: 0.1, bass: 0.2, tone: [0.1, 0.5, 0.25, 0.15] });
+  assert(thin.eq[3] > 1 && thin.eq[9] < 0, `thin and bright: more body, less air ${JSON.stringify(thin.eq)}`);
+  const dull = songAdjust({ center: 0.2, ambience: 0.1, bass: 0.2, tone: [0.4, 0.45, 0.13, 0.02] });
+  assert(dull.eq[8] > 1.5 && dull.eq[7] > 0.5, `dull song: more air and presence ${JSON.stringify(dull.eq)}`);
+  assert(thin.eq.every(v => Math.abs(v) <= 2.5), 'corrections stay gentle');
+  assert(songAdjust({ center: 0.2, ambience: 0.35, bass: 0.2 }).reverb < 0.6, 'reverberant songs get less added room');
+  assert(songAdjust({ center: 0.2, ambience: 0.03, bass: 0.2 }).reverb > 1.1, 'dry songs get more');
+  const danceSong = songAdjust({ center: 0.15, ambience: 0.1, bass: 0.5, bpm: 124, beatConfidence: 0.8 });
+  const balladSong = songAdjust({ center: 0.35, ambience: 0.2, bass: 0.15, bpm: 72, beatConfidence: 0.6 });
+  assert(danceSong.depth > 0.15 && danceSong.character === "dançante" && balladSong.depth < 0 && balladSong.character === "balada de voz");
+  const mixer = new AutoMixer();
+  for (let i = 0; i < 60; i++) mixer.update({ center: 0.35, ambience: 0.2, bass: 0.15, level: -18, tone: [0.4, 0.45, 0.13, 0.02], bpm: 72, beatConfidence: 0.6 });
+  assert(mixer.adjust.eq[8] > 1 && mixer.adjust.depth < -0.1 && mixer.adjust.character === 'balada de voz', JSON.stringify(mixer.adjust));
+  mixer.reset(); assert(mixer.adjust.eq.every(v => v === 0) && mixer.adjust.reverb === 1);
   console.log('Live DJ auto-mix: per-song targets, smoothing, gap detection, short dips ignored, reset: OK');
 })().catch(e => { console.error(e); process.exit(1); });

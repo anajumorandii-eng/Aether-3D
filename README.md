@@ -123,7 +123,7 @@ Para testar: `npm run test:audio` (inclui `tests/surround-dsp.cjs` e `tests/surr
 
 Com o Cinema 7.1 ligado (e no DJ 3D), dois controles a mais:
 
-- **DJ ao vivo: mixar cada música** (`src/audio/autoMix.ts`): o Aether mede a voz, a ambiência e os graves de cada música e ajusta a mixagem dela a partir dos seus controles. Mixagens com muito reverb recebem menos espaço extra, para não ecoar. Faixas secas recebem mais. A voz vem para a frente quando os graves ou a reverberação a encobrem. Faixas com muito grave recebem menos reforço, e faixas magras, mais. O painel mostra o ajuste da música atual.
+- **Personalizar cada música** (`src/audio/autoMix.ts`): o Aether mede a voz, a ambiência e os graves de cada música e ajusta a mixagem dela a partir dos seus controles. Mixagens com muito reverb recebem menos espaço extra, para não ecoar. Faixas secas recebem mais. A voz vem para a frente quando os graves ou a reverberação a encobrem. Faixas com muito grave recebem menos reforço, e faixas magras, mais. O painel mostra o ajuste da música atual.
 - **Transições de DJ**: nos últimos segundos de uma música, os graves são filtrados e o som ecoa (eco em colcheia pontuada). Quando a música nova começa, o filtro abre a partir dos graves, o eco da anterior se apaga e o ambiente se abre por alguns segundos.
 
 A ordem das músicas fica com o Spotify (aleatório, Smart Shuffle e o crossfade dele). Pela entrada ao vivo, o Aether recebe uma música por vez, então não sobrepõe duas faixas. Com o Spotify conectado e a permissão de “Seguir o Spotify” concedida uma vez, o app lê a música atual a cada 2,5 s: a saída começa antes do fim e o player mostra nome e capa. Durante a captura, nunca assume a reprodução. Sem o Spotify conectado, a troca é percebida pelo áudio: um silêncio entre as músicas ou uma mudança forte e sustentada de caráter, como voz, graves, ambiência e volume, depois de pelo menos 40 s de música. O painel do palco mostra de onde vem o tempo das transições, com o erro do Spotify quando ele não responde, e cada transição aparece num aviso. Arquivos locais recebem as mesmas transições.
@@ -132,7 +132,7 @@ A ordem das músicas fica com o Spotify (aleatório, Smart Shuffle e o crossfade
 
 No Cinema 7.1 e no DJ 3D, o **Passeio 8D** faz os instrumentos e a ambiência girarem ao redor da cabeça, passando de um ouvido para o outro e por trás, enquanto a voz fica parada à frente. Dois osciladores (cosseno e seno do ângulo) movem as posições dos alto-falantes HRTF na thread de áudio, então o giro continua com a página em segundo plano. A velocidade vai de uma volta a cada 30 s até uma a cada 6 s. O DJ 3D liga o passeio a partir do nível Intenso.
 
-Com **DJ ao vivo: mixar cada música** ligado, o passeio se adapta a cada música:
+Com **Personalizar cada música** ligado, o passeio se adapta a cada música:
 
 - **No ritmo:** o processador mede o andamento (BPM) pelo fluxo espectral das batidas, com autocorrelação de 60 a 180 BPM nos últimos ~11 s. O giro trava num número inteiro de tempos por volta (4, 8, 16, 32 ou 64, para cair nos compassos), o mais próximo da velocidade escolhida. Sem batida clara, gira na velocidade escolhida.
 - **Em altura:** os alto-falantes também sobem e descem (meia volta por giro). Músicas com mais ambiência se movem mais.
@@ -143,3 +143,16 @@ Com **DJ ao vivo: mixar cada música** ligado, o passeio se adapta a cada músic
 **Imersão do 8D** (0–100%) acrescenta uma camada de 8D clássico: a música inteira, com os graves fora, gira pela mesma rotação com panorâmica forte, mais escura e um pouco mais baixa por trás da cabeça. Ela é atrasada pela latência do upmix (2048 amostras) para ficar alinhada com o resto. Quanto mais imersão, mais as partes paradas (a voz fixa à frente, as frentes) recuam.
 
 O modo **Íntimo** é para ouvir só você e a música: voz no máximo de foco (próxima, quente, com presença e ar), a música aberta ao redor com pouca reverberação (Estúdio a 12%, envolvimento 65%, quase sem eco), um passeio lento e sutil (imersão 25%) e nenhum efeito de DJ entre as músicas.
+
+### Personalizar cada música
+
+Com **Personalizar cada música** ligado (Cinema 7.1, DJ 3D e Íntimo), cada música recebe a própria mixagem, sempre a partir dos ajustes do ouvinte:
+
+| O que é medido | O que muda |
+|---|---|
+| Voz no centro, ambiência, graves | Voz à frente, envolvimento, impacto dos graves |
+| Equilíbrio de timbre acima dos graves (corpo 120–400 Hz, médios, presença 2–6 kHz, ar 6 kHz+) | Correção suave no equalizador, no máximo ±2,5 dB por faixa: música magra ganha corpo, abafada ganha brilho, áspera perde presença |
+| Reverberação própria da música | Quanto da acústica de ambiente é somada (35–140%): menos eco nas músicas que já têm |
+| Andamento e clareza da batida | Giro do 8D travado no ritmo; força do 8D maior nas dançantes e menor nas baladas de voz |
+
+O painel mostra o tipo de música percebido (dançante, balada de voz, atmosférica, equilibrada) e cada ajuste. Ao desligar, o som volta exatamente aos ajustes do ouvinte.

@@ -1,4 +1,4 @@
-import { AutoMixer, walkPlan, type MixOffsets, type WalkPlan } from './autoMix';
+import { AutoMixer, walkPlan, type MixOffsets, type SongAdjust, type WalkPlan } from './autoMix';
 
 export interface SurroundAnalysis {
   status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
@@ -15,6 +15,8 @@ export interface SurroundAnalysis {
   /** Measured tempo and how sure the measure is, 0–1. */
   bpm?: number;
   beatConfidence?: number;
+  /** Per-song EQ, reverb and 8D adjustments, when per-song mixing is on. */
+  adjust?: SongAdjust;
   /** How the 8D walk is moving for this song, when it is on. */
   walk?: WalkPlan;
   frames: number;
@@ -65,6 +67,9 @@ export class VirtualSurround {
   private surgeLength = 0;
   /** Called when the audio shows a gap between songs and a new one starts. */
   onTrackGap: (() => void) | null = null;
+  /** Receives the per-song EQ and reverb adjustment (neutral when per-song mixing stops applying). */
+  onSongAdjust: ((adjust: SongAdjust | null) => void) | null = null;
+  private adjustApplied = false;
   private centerClose: GainNode | null = null;
   private presence: BiquadFilterNode | null = null;
   private bassShelf: BiquadFilterNode | null = null;
@@ -96,7 +101,8 @@ export class VirtualSurround {
         let gap = false;
         // Song changes are watched whenever this route plays, even with per-song mixing off.
         if (this.active) { gap = this.autoMixer.update(metrics); if (this.autoMix) this.applyLevels(); }
-        this.analysis = { status: 'ready', ...metrics, offsets: this.autoMix ? { ...this.autoMixer.offsets } : undefined };
+        this.analysis = { status: 'ready', ...metrics, offsets: this.autoMix ? { ...this.autoMixer.offsets } : undefined, adjust: this.autoMix ? { ...this.autoMixer.adjust } : undefined };
+        this.pushAdjust();
         if (this.active && this.walk) this.applyWalk();
         this.analysis.walk = this.walk ? { ...this.plan } : undefined;
         if (gap) this.onTrackGap?.();
@@ -215,7 +221,7 @@ export class VirtualSurround {
     const focus = clamp01(this.focus + o.focus); const amount = clamp01(this.amount + o.amount + surge); const punch = clamp01(this.punch + o.punch);
     // Voice focus: up to about +5.5 dB overall, mostly on the close path, with presence at 3.2 kHz.
     // While the classic 8D layer plays, the still parts step back so the movement is what you hear.
-    const classic = this.walk ? this.walkDepth : 0;
+    const classic = this.walk ? Math.max(0, Math.min(1, this.walkDepth + (this.autoMix ? this.autoMixer.adjust.depth : 0))) : 0;
     const still = 1 - 0.65 * classic;
     if (this.classicGain) set(this.classicGain, 1.1 * classic);
     const voice = (1 + 0.9 * focus) * still; const close = 0.2 + 0.8 * focus;
@@ -264,7 +270,13 @@ export class VirtualSurround {
 
   /** When Spotify reports song changes, the audio only counts a clear gap, not a change of character. */
   setNoveltyDetection(enabled: boolean) { this.autoMixer.detectNovelty = enabled; }
-  setAutoMix(enabled: boolean) { this.autoMix = enabled; if (!enabled) this.autoMixer.reset(); this.applyLevels(); }
+  setAutoMix(enabled: boolean) { this.autoMix = enabled; if (!enabled) this.autoMixer.reset(); this.applyLevels(); this.pushAdjust(); }
+  /** Sends the per-song EQ/reverb while it applies, and a single neutral one when it stops. */
+  private pushAdjust() {
+    const on = this.active && this.autoMix;
+    if (on) { this.onSongAdjust?.(this.autoMixer.adjust); this.adjustApplied = true; }
+    else if (this.adjustApplied) { this.onSongAdjust?.(null); this.adjustApplied = false; }
+  }
   /** A new song is starting: relearn it and open the room for a moment. */
   newTrack(surgeSeconds = 0) {
     this.autoMixer.newTrack();
@@ -275,6 +287,7 @@ export class VirtualSurround {
     if (active === this.active) return;
     this.active = active;
     this.node?.port.postMessage({ type: 'active', value: active });
+    this.pushAdjust();
   }
   reset() {
     this.generation++;

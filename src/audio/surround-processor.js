@@ -68,6 +68,10 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     this.prevLog = new Float32Array(BINS); this.onset = new Float32Array(ONSET_LEN);
     this.fluxBins = Math.min(BINS, Math.ceil((FLUX_MAX_HZ * N) / sampleRate));
     this.frameRate = sampleRate / HOP;
+    // Tone: which of four bands above the bass each bin belongs to (body, mids, presence, air).
+    this.band = new Uint8Array(BINS);
+    for (let k = 0; k < BINS; k++) { const f = (k * sampleRate) / N; this.band[k] = f < 120 ? 255 : f < 400 ? 0 : f < 2000 ? 1 : f < 6000 ? 2 : 3; }
+    this.bandEnergy = new Float64Array(4);
     this.generation = 0;
     this.active = true;
     this.reset();
@@ -88,6 +92,13 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
     this.energyIn = 0; this.energyCenter = 0; this.energyAmbience = 0; this.energyBass = 0; this.windowSquares = 0; this.windowCount = 0;
     this.prevLog.fill(0); this.onset.fill(0); this.onsetPos = 0; this.onsetCount = 0; this.flux = 0;
     this.bpm = 0; this.beatConfidence = 0;
+    if (this.bandEnergy) this.bandEnergy.fill(0);
+  }
+
+  /** Share of the energy above the bass in body (120–400 Hz), mids, presence (2–6 kHz) and air (6 kHz+). */
+  toneShares() {
+    const e = this.bandEnergy; const total = e[0] + e[1] + e[2] + e[3] + 1e-20;
+    return [e[0] / total, e[1] / total, e[2] / total, e[3] / total];
   }
 
   /** Autocorrelation of the onset curve for 60–180 BPM, preferring tempos near 120. */
@@ -209,6 +220,7 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       if (k === 0 || k === N / 2) for (const s of this.spec) s.im[k] = 0;
       this.energyIn += ll + rrE;
       this.energyBass += bass * (ll + rrE);
+      if (this.band[k] !== 255) this.bandEnergy[this.band[k]] += ll + rrE;
       if (k < this.fluxBins) { const lg = Math.log1p(100 * (Math.sqrt(ll) + Math.sqrt(rrE))); const d = lg - this.prevLog[k]; if (d > 0) this.flux += d; this.prevLog[k] = lg; }
       this.energyCenter += 2 * (cr * cr + ci * ci);
       this.energyAmbience += ma * (l1r * l1r + l1i * l1i + r1r * r1r + r1i * r1i);
@@ -272,7 +284,8 @@ class SurroundUpmixProcessor extends AudioWorkletProcessor {
       const total = this.energyIn + 1e-20;
       // level: input loudness of the last 250 ms in dBFS, used to notice the gap between songs.
       const level = 10 * Math.log10(this.windowSquares / Math.max(1, this.windowCount) + 1e-12);
-      this.port.postMessage({ generation: this.generation, center: this.energyCenter / total, ambience: this.energyAmbience / total, bass: this.energyBass / total, level, bpm: this.bpm, beatConfidence: this.beatConfidence, frames: this.frames * HOP });
+      this.port.postMessage({ generation: this.generation, center: this.energyCenter / total, ambience: this.energyAmbience / total, bass: this.energyBass / total, level, bpm: this.bpm, beatConfidence: this.beatConfidence, tone: this.toneShares(), frames: this.frames * HOP });
+      for (let b = 0; b < 4; b++) this.bandEnergy[b] *= 0.5;
       this.energyIn *= 0.5; this.energyCenter *= 0.5; this.energyAmbience *= 0.5; this.energyBass *= 0.5;
       this.windowSquares = 0; this.windowCount = 0;
     }
