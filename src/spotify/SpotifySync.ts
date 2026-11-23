@@ -54,7 +54,12 @@ function base64encode(input: ArrayBuffer): string {
     .replace(/\//g, '_');
 }
 
-export async function loginWithSpotify() {
+/**
+ * Opens Spotify's login. Spotify skips its screen when the browser is already signed in, which
+ * reconnects the same account; `chooseAccount` makes it show the screen (with "Not you?"), so another
+ * account can be picked.
+ */
+export async function loginWithSpotify(options: { chooseAccount?: boolean } = {}) {
   const codeVerifier = generateRandomString(64);
   localStorage.setItem('spotify_code_verifier', codeVerifier);
 
@@ -68,6 +73,7 @@ export async function loginWithSpotify() {
     code_challenge_method: 'S256',
     code_challenge: codeChallenge,
     redirect_uri: REDIRECT_URI,
+    ...(options.chooseAccount ? { show_dialog: 'true' } : {}),
   }).toString();
 
   window.location.href = authUrl.toString();
@@ -224,6 +230,12 @@ export async function pauseSpotifyPlayback(token: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** The connected account's name, to show which account the app is using. */
+export async function fetchSpotifyProfile(token: string): Promise<{ name: string }> {
+  const data = await spotifyFetch('/me', token);
+  return { name: String(data?.display_name || data?.id || 'Conta do Spotify') };
 }
 
 export async function fetchUserPlaylists(token: string): Promise<SpotifyPlaylist[]> {

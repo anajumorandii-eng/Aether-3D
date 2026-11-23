@@ -52,6 +52,18 @@ const { chromium } = require('playwright'); const assert = require('node:assert/
     await p.getByText(/Teste de transição/).waitFor();
     await p.getByText(/^Transição de DJ: nova música/).waitFor({ timeout: 8000 });
     console.log('DJ log and on-demand transition test: OK');
+    // Trocar conta: the old login is cleared and Spotify is asked to show its account screen.
+    await p.getByRole('button', { name: 'Parar captura ao vivo' }).click();
+    let authorizeUrl = null;
+    await p.route('https://accounts.spotify.com/**', route => { authorizeUrl = route.request().url(); return route.fulfill({ body: '<html><body>Spotify</body></html>', contentType: 'text/html' }); });
+    // window.name survives the navigation, so it can carry what the app removed before leaving.
+    await p.evaluate(() => { window.name = ''; const remove = localStorage.removeItem.bind(localStorage); localStorage.removeItem = key => { window.name += '|' + key; remove(key); }; });
+    await p.getByRole('button', { name: 'Trocar conta do Spotify' }).click();
+    await p.waitForURL(/accounts\.spotify\.com/);
+    const url = new URL(authorizeUrl);
+    assert.equal(url.searchParams.get('show_dialog'), 'true', 'Spotify must show the account screen');
+    assert((await p.evaluate(() => window.name)).includes('|spotify_access_token'), 'the old account is logged out');
+    console.log('Trocar conta: old login cleared, Spotify asked to show the account screen: OK');
     assert.deepEqual(errors, []);
   } finally { await b.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

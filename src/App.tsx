@@ -12,6 +12,7 @@ import { deleteStoredFile, loadStoredFiles, requestPersistentStorage, saveStored
 import {
   FOLLOW_SCOPES,
   fetchCurrentlyPlaying,
+  fetchSpotifyProfile,
   fetchPlaylistTracks,
   fetchUserPlaylists,
   hasScopes,
@@ -85,6 +86,7 @@ export default function App() {
   }, []);
   const [handoffStatus, setHandoffStatus] = useState<HandoffStatus>({ phase: 'idle', message: '' });
   const [spotifyNow, setSpotifyNow] = useState<SpotifyNowPlaying | null>(null);
+  const [spotifyAccount, setSpotifyAccount] = useState<string | null>(null);
 
   // Reprodução
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -554,6 +556,7 @@ export default function App() {
     (async () => {
       const token = await handleSpotifyCallback().catch(() => null);
       if (token) {
+        try { localStorage.removeItem('aether_spotify_choose_account'); } catch { /* storage unavailable */ }
         setSpotifyToken(token);
         syncPlaylists(token);
         if (localStorage.getItem('aether_follow_spotify') === '1' && hasScopes(FOLLOW_SCOPES)) {
@@ -563,12 +566,29 @@ export default function App() {
     })();
   }, [syncPlaylists]);
 
+  // Shows which Spotify account is connected.
+  useEffect(() => {
+    if (!spotifyToken) return;
+    let cancelled = false;
+    fetchSpotifyProfile(spotifyToken).then(p => { if (!cancelled) setSpotifyAccount(p.name); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [spotifyToken]);
+
   const connectSpotify = () => {
     if (!isSpotifyConfigured()) {
       notify('Defina SPOTIFY_CLIENT_ID em src/spotify/SpotifySync.ts para conectar.');
       return;
     }
-    loginWithSpotify();
+    let choose = false;
+    try { choose = localStorage.getItem('aether_spotify_choose_account') === '1'; } catch { /* storage unavailable */ }
+    void loginWithSpotify({ chooseAccount: choose });
+  };
+
+  // After an explicit disconnect, the next login shows Spotify's screen so another account can be chosen.
+  const switchSpotifyAccount = () => {
+    disconnectSpotify();
+    try { localStorage.setItem('aether_spotify_choose_account', '1'); } catch { /* storage unavailable */ }
+    void loginWithSpotify({ chooseAccount: true });
   };
 
   const disconnectSpotify = () => {
@@ -579,6 +599,8 @@ export default function App() {
     setPlaylists([]);
     setSpotifyTracks([]);
     setSelectedPlaylist('');
+    setSpotifyAccount(null);
+    try { localStorage.setItem('aether_spotify_choose_account', '1'); } catch { /* storage unavailable */ }
   };
 
   // ---------- Seguir o Spotify ----------
@@ -988,6 +1010,8 @@ export default function App() {
       handoffStatus={handoffStatus}
       onResumeHandoff={resumeHandoff}
       onLogout={disconnectSpotify}
+      onSwitchAccount={switchSpotifyAccount}
+      accountName={spotifyAccount}
       onImport={() => fileInputRef.current?.click()}
       onDemo={playDemo}
       onSelectPlaylist={(id) => spotifyToken && selectPlaylist(id, spotifyToken)}

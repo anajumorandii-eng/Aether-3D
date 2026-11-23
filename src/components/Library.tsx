@@ -1,4 +1,4 @@
-import { AudioLines, FolderOpen, HardDrive, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { AudioLines, FolderOpen, HardDrive, ListMusic, LogOut, Music2, Radio, RefreshCw, Sparkles, Trash2, UserRoundCog } from 'lucide-react';
 import type { HandoffStatus } from '../spotify/SpotifyHandoff';
 import type { ReactNode } from 'react';
 import type { SpotifyNowPlaying, SpotifyPlaylist } from '../spotify/SpotifySync';
@@ -37,6 +37,10 @@ interface Props {
   handoffStatus: HandoffStatus;
   onResumeHandoff: () => void;
   onLogout: () => void;
+  /** Disconnects and opens Spotify's login screen so another account can be chosen. */
+  onSwitchAccount: () => void;
+  /** Name of the connected Spotify account, once known. */
+  accountName?: string | null;
   onImport: () => void;
   onDemo: () => void;
   onSelectPlaylist: (id: string) => void;
@@ -58,11 +62,14 @@ export function Library(p: Props) {
             <div className="col-span-2 flex items-center gap-3 rounded-md border border-spotify/25 bg-spotify/[0.06] px-3 py-2.5">
               <SpotifyGlyph className="w-5 h-5 text-spotify shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium text-ink">Spotify conectado</p>
+                <p className="text-xs font-medium text-ink truncate">{p.accountName ? `Conta: ${p.accountName}` : 'Spotify conectado'}</p>
                 <p className="text-[11px] text-ink-muted">{p.playlists.length} playlists sincronizadas</p>
               </div>
               <button onClick={p.onSync} aria-label="Sincronizar playlists" className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-raised transition">
                 <RefreshCw className={`w-4 h-4 ${p.syncing ? 'animate-spin' : ''}`} />
+              </button>
+              <button onClick={p.onSwitchAccount} aria-label="Trocar conta do Spotify" className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-raised transition">
+                <UserRoundCog className="w-4 h-4" />
               </button>
               <button onClick={p.onLogout} aria-label="Desconectar Spotify" className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-raised transition">
                 <LogOut className="w-4 h-4" />
