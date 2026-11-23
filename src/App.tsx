@@ -585,10 +585,18 @@ export default function App() {
   };
 
   // After an explicit disconnect, the next login shows Spotify's screen so another account can be chosen.
+  // Spotify keeps one signed-in account per browser and never lists others: it must be signed out first,
+  // so the next login asks for an email and password. A small window signs out, then the login opens.
   const switchSpotifyAccount = () => {
     disconnectSpotify();
     try { localStorage.setItem('aether_spotify_choose_account', '1'); } catch { /* storage unavailable */ }
-    void loginWithSpotify({ chooseAccount: true });
+    const logout = window.open('https://accounts.spotify.com/logout', 'spotify-logout', 'width=480,height=640');
+    if (!logout) {
+      notify('Permita janelas pop-up para o Aether, ou abra accounts.spotify.com, clique em Sair e depois em Conectar Spotify.');
+      return;
+    }
+    notify('Saindo da conta atual do Spotify…');
+    window.setTimeout(() => { try { logout.close(); } catch { /* already closed */ } void loginWithSpotify({ chooseAccount: true }); }, 3000);
   };
 
   const disconnectSpotify = () => {
