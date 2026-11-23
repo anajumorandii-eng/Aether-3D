@@ -52,7 +52,7 @@ export function parseModes(raw: string): ListeningMode[] {
 export function parseSpotify(raw: string): { playlistId: string; refreshRevision: string } {
   const parsed: unknown = JSON.parse(raw);
   const value = typeof parsed === 'string' ? { playlistId: parsed, refreshRevision: '' } : parsed as { playlistId: string; refreshRevision: string };
-  if (!value || typeof value.playlistId !== 'string' || (value.playlistId !== 'liked-songs' && !/^[a-zA-Z0-9]{0,100}$/.test(value.playlistId)) ||
+  if (!value || typeof value.playlistId !== 'string' || (value.playlistId !== 'liked-songs' && value.playlistId !== 'local-files' && !/^[a-zA-Z0-9]{0,100}$/.test(value.playlistId)) ||
       typeof value.refreshRevision !== 'string' || value.refreshRevision.length > 80) throw new Error('Playlist inválida na conta.');
   return value;
 }

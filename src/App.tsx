@@ -55,6 +55,9 @@ interface LocalFile {
 
 type MobileTab = 'listen' | 'library' | 'eq' | 'room';
 
+/** The "Meus arquivos" choice in the playlist row: only the imported files, no Spotify playlist. */
+const LOCAL_FILES = 'local-files';
+
 const findLocalMatch = findTrackMatch;
 
 export default function App() {
@@ -146,7 +149,9 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
 
   // Fila mesclada: Spotify (vinculado aos arquivos) + arquivos soltos + demo
+  // With a Spotify playlist chosen, the queue is that playlist only; "Meus arquivos" shows only the files.
   const tracks = useMemo<PlayableTrack[]>(() => {
+    const playlistOnly = selectedPlaylist !== '' && selectedPlaylist !== LOCAL_FILES && spotifyTracks.length > 0;
     const used = new Set<string>();
     const merged: PlayableTrack[] = spotifyTracks.map((sp) => {
       const match = findLocalMatch(localFiles, sp.name, sp.artist);
@@ -160,8 +165,9 @@ export default function App() {
     const demo: PlayableTrack[] = demoUrl
       ? [{ id: 'demo', name: 'Aether · Demonstração', artist: 'Faixa de demonstração', url: demoUrl, source: 'demo' }]
       : [];
-    return [...merged, ...locals, ...demo];
-  }, [spotifyTracks, localFiles, demoUrl]);
+    if (playlistOnly) return merged;
+    return selectedPlaylist === LOCAL_FILES ? [...localFiles.map((f) => ({ id: f.url, name: f.name, artist: "Arquivo local", url: f.url, source: "local" as const })), ...demo] : [...merged, ...locals, ...demo];
+  }, [spotifyTracks, localFiles, demoUrl, selectedPlaylist]);
 
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
@@ -491,6 +497,7 @@ export default function App() {
   const lastRequestedPlaylist = useRef('');
   const selectPlaylist = useCallback(async (playlistId: string, token: string) => {
     lastRequestedPlaylist.current = playlistId;
+    if (playlistId === LOCAL_FILES) { setSelectedPlaylist(playlistId); setSpotifyTracks([]); return; }
     setSelectedPlaylist(playlistId);
     setIsSyncing(true);
     try {
@@ -520,7 +527,8 @@ export default function App() {
         setPlaylists(list);
         lastPlaylistSyncRef.current = Date.now();
         // Mantém a playlist escolhida, se ela ainda existir
-        const keep = list.find((pl) => pl.id === selectedPlaylistRef.current) ?? list[0];
+        // "Meus arquivos" stays chosen across syncs; otherwise keep the playlist, or take the first.
+        const keep = selectedPlaylistRef.current === LOCAL_FILES ? { id: LOCAL_FILES } : list.find((pl) => pl.id === selectedPlaylistRef.current) ?? list[0];
         if (keep) await selectPlaylist(keep.id, token);
       } catch (err) {
         if (!isSpotifySessionSaved()) {

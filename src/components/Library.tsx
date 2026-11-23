@@ -154,7 +154,7 @@ export function Library(p: Props) {
           <div className="mt-4">
             <p className="eyebrow mb-2">Playlists</p>
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-5 px-5">
-              {p.playlists.map((pl) => {
+              {[{ id: 'local-files', name: 'Meus arquivos' }, ...p.playlists].map((pl) => {
                 const active = p.selectedPlaylist === pl.id;
                 return (
                   <button
